@@ -10,17 +10,22 @@ Keep this updated as work progresses. `[ ]` todo, `[~]` in progress, `[x]` done.
 - [x] Fork `esphome/voice-kit-xmos-firmware` → add as submodule `external/`
 - [x] Create **public** GitHub repo + push → https://github.com/ramzes642/voice-pe-elevenlabs
 
-## Phase 1 — Bridge prototype (laptop, NO hardware)  ← start here
+## Phase 1 — Bridge prototype (laptop, NO hardware)  ← in progress
 De-risk ElevenLabs before touching firmware.
-- [ ] Create an ElevenLabs Agent in the dashboard (Russian, voice, system prompt/persona)
-- [ ] Get `agent_id`; put `ELEVENLABS_API_KEY` in a local `.env` (gitignored)
-- [ ] `bridge/prototype.py`: open the Agent WebSocket, stream a wav / laptop mic in,
-      play the agent's audio out
-- [ ] Confirm: **audio format** (sample rate / codec, in & out)
-- [ ] Confirm: **Russian** STT+TTS quality end-to-end
-- [ ] Confirm: **client_tool_call / client_tool_result** schema with a dummy tool
-      (e.g. `turn_on_ac`)
+- [x] Create an ElevenLabs Agent ("Nyan-cat", LLM gemini-2.5-flash) — ⚠️ language=`en`, change to `ru`
+- [x] Get `agent_id`; `ELEVENLABS_API_KEY` in `bridge/.env` (gitignored, verified untracked)
+- [x] `bridge/probe.py`: WS round-trip (text-in) + REST config fetch + audio capture
+- [x] Confirm **audio format**: **pcm_16000 both input & output** (from `conversation_initiation_metadata`)
+- [~] Confirm **Russian**: LLM replies in Russian ✓ ("У меня всё хорошо…"); still TODO: set agent
+      `language=ru`, then verify Scribe **STT from audio** + TTS voice quality (play `out.wav`)
+- [ ] Confirm **client_tool_call / client_tool_result** schema — needs a tool added to the agent (none yet)
+- [ ] Feed **real audio** (wav/mic) to validate STT, not just text
 - [ ] Measure round-trip latency
+
+Protocol confirmed (see also docs/architecture.md): WS `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=…`,
+auth via `xi-api-key` header; events `conversation_initiation_metadata` (carries audio formats + conversation_id),
+`agent_response`, `agent_response_correction`, `audio` (`audio_event.audio_base_64`), `ping`→`pong`,
+`client_tool_call`→`client_tool_result`; send `user_message`(text) / `user_audio_chunk`(base64 pcm16k).
 
 ## Phase 2 — Bridge as a Home Assistant integration
 - [ ] Port the prototype into a HA custom integration `el_bridge`

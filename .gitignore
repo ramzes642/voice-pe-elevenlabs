@@ -26,3 +26,7 @@ venv/
 *.wav
 *.raw
 !docs/**/*.wav
+
+# bridge runtime artifacts
+bridge/out.*
+bridge/.venv/
