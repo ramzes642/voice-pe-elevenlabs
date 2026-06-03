@@ -1,0 +1,28 @@
+# Secrets — NEVER commit
+.env
+.env.*
+!.env.example
+*.key
+secrets.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# ESPHome build artifacts
+.esphome/
+*.bin
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Audio scratch
+*.wav
+*.raw
+!docs/**/*.wav
