@@ -10,22 +10,26 @@ Keep this updated as work progresses. `[ ]` todo, `[~]` in progress, `[x]` done.
 - [x] Fork `esphome/voice-kit-xmos-firmware` → add as submodule `external/`
 - [x] Create **public** GitHub repo + push → https://github.com/ramzes642/voice-pe-elevenlabs
 
-## Phase 1 — Bridge prototype (laptop, NO hardware)  ← in progress
-De-risk ElevenLabs before touching firmware.
-- [x] Create an ElevenLabs Agent ("Nyan-cat", LLM gemini-2.5-flash) — ⚠️ language=`en`, change to `ru`
-- [x] Get `agent_id`; `ELEVENLABS_API_KEY` in `bridge/.env` (gitignored, verified untracked)
-- [x] `bridge/probe.py`: WS round-trip (text-in) + REST config fetch + audio capture
-- [x] Confirm **audio format**: **pcm_16000 both input & output** (from `conversation_initiation_metadata`)
-- [~] Confirm **Russian**: LLM replies in Russian ✓ ("У меня всё хорошо…"); still TODO: set agent
-      `language=ru`, then verify Scribe **STT from audio** + TTS voice quality (play `out.wav`)
-- [ ] Confirm **client_tool_call / client_tool_result** schema — needs a tool added to the agent (none yet)
-- [ ] Feed **real audio** (wav/mic) to validate STT, not just text
-- [ ] Measure round-trip latency
+## Phase 1 — Bridge prototype (laptop, NO hardware)  ✅ COMPLETE
+De-risked ElevenLabs before touching firmware.
+- [x] ElevenLabs Agent "Nyan-cat" (gemini-2.5-flash), **language=ru**, neko persona, voice VD1if7jD…
+      — note: dashboard changes require **Publish** to take effect.
+- [x] `agent_id` + `ELEVENLABS_API_KEY` in `bridge/.env` (gitignored, verified untracked)
+- [x] `bridge/probe.py`: REST config fetch + WS round-trips (text / audio / multi-turn `--tool`)
+- [x] **Audio format**: pcm_16000 both input & output
+- [x] **Russian**: accurate Scribe STT from audio ("Включи кондиционер во всём доме."),
+      Russian TTS + neko persona ("Привет котик! Ня~"). Needs a ~0.6s lead-in so the first word
+      isn't clipped, and a settle delay after init.
+- [x] **client_tool_call / client_tool_result**: `turn_on_ac` fired, we replied, agent continued.
+      Schema: `{tool_name, tool_call_id, parameters:{}, event_id, expects_response}`.
+- [x] Feed **real audio** (TTS-generated) → STT validated, not just text
+- [x] **Latency**: end-of-input → first agent audio ≈ **0.28 s** 🚀
 
-Protocol confirmed (see also docs/architecture.md): WS `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=…`,
+Protocol confirmed (see docs/architecture.md): WS `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=…`,
 auth via `xi-api-key` header; events `conversation_initiation_metadata` (carries audio formats + conversation_id),
 `agent_response`, `agent_response_correction`, `audio` (`audio_event.audio_base_64`), `ping`→`pong`,
-`client_tool_call`→`client_tool_result`; send `user_message`(text) / `user_audio_chunk`(base64 pcm16k).
+`client_tool_call`→`client_tool_result`, `user_transcript`, `interruption`; send
+`user_message`(text) / `user_audio_chunk`(base64 pcm16k). Turn end = server VAD on trailing silence.
 
 ## Phase 2 — Bridge as a Home Assistant integration
 - [ ] Port the prototype into a HA custom integration `el_bridge`

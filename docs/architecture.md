@@ -51,12 +51,27 @@
   want to keep our own brain.
 - Tools defined here; preferred = **client tools** (executed by `el_bridge`).
 
-## Audio (to be confirmed in Phase 1)
+## Audio (CONFIRMED in Phase 1)
 - Device mic: 16 kHz, mono after XMOS, 16-bit PCM (XMOS outputs 2 channels; we use the
   AEC/ASR one).
-- ElevenLabs Agent WS input/output format: **TBD** — likely PCM 16 kHz or 8 kHz µ-law.
-  Confirm exact `sample_rate`/codec and the event schema in Phase 1.
-- Speaker path wants 48 kHz; the firmware already has resamplers + mixer.
+- **ElevenLabs Agent WS: pcm_16000 both input and output** (mono, 16-bit). So the device
+  mic feeds in with **no resampling**; the agent's 16 kHz output is upsampled to 48 kHz by
+  the firmware's existing resampler/mixer for the speaker.
+- Input: stream `user_audio_chunk` (base64 pcm16k) frames; server-side VAD ends the turn on
+  trailing silence. Give a short lead-in so the first word isn't clipped.
+- **Measured latency: end-of-speech → first agent audio ≈ 0.28 s.**
+
+## ElevenLabs WS protocol (CONFIRMED in Phase 1)
+- Endpoint `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=…`, auth `xi-api-key` header.
+- Client→server: `conversation_initiation_client_data`, `user_audio_chunk` (base64),
+  `user_message` (text), `pong`, `client_tool_result`.
+- Server→client: `conversation_initiation_metadata` (audio formats + conversation_id),
+  `audio` (`audio_event.audio_base_64`), `user_transcript`, `agent_response`,
+  `agent_response_correction`, `ping`, `client_tool_call`, `interruption`, `vad_score`.
+- Tool call: `{tool_name, tool_call_id, parameters, event_id, expects_response}` → reply
+  `{type:"client_tool_result", tool_call_id, result, is_error}` (only consumed when
+  `expects_response`).
+- Dashboard edits require **Publish** to reach the API.
 
 ## Tool handling — two options
 1. **Client tools (preferred):** EL → `client_tool_call` → `el_bridge` executes locally.
@@ -70,10 +85,10 @@
 ## Open questions / gotchas
 - **AEC reference:** verify `el_agent` plays through the same output path the XMOS uses
   as the echo reference, or barge-in echo returns.
-- **EL WS protocol:** exact audio format + `client_tool_call`/`result` schema + how
-  interruptions/VAD are signalled. (Phase 1.)
+- ~~**EL WS protocol:** audio format + tool schema + VAD~~ — RESOLVED in Phase 1 (see above).
 - **Wake → connect handshake:** does `el_agent` open the UDP stream directly (firmware
   knows the bridge endpoint) with the bridge reacting to the wake event, or does HA push
   a start to the device? Likely device-initiated on wake; HA reacts.
-- **Latency budget:** device→HA (LAN, ~ms) + HA→EL (cloud, ~0.5 s observed on their site).
+- ~~**Latency budget**~~ — measured ≈0.28 s end-of-speech→first audio (cloud, from a laptop).
+  Re-measure once device→HA(LAN)→EL path exists.
 - **Cost:** EL Agents billed per minute (~$0.08–0.10/min platform + LLM). Track usage.
