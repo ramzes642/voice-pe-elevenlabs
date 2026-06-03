@@ -5,10 +5,10 @@ Keep this updated as work progresses. `[ ]` todo, `[~]` in progress, `[x]` done.
 ## Phase 0 — Scaffolding
 - [x] Create umbrella repo (docs, structure)
 - [x] Write README / AGENTS.md / architecture / hardware docs
-- [ ] `gh auth login` (user, interactive)
-- [ ] Fork `esphome/home-assistant-voice-pe` → add as submodule `external/`
-- [ ] Fork `esphome/voice-kit-xmos-firmware` → add as submodule `external/`
-- [ ] Create private GitHub repo + push
+- [x] `gh auth login` (user, interactive)
+- [x] Fork `esphome/home-assistant-voice-pe` → add as submodule `external/`
+- [x] Fork `esphome/voice-kit-xmos-firmware` → add as submodule `external/`
+- [x] Create **public** GitHub repo + push → https://github.com/ramzes642/voice-pe-elevenlabs
 
 ## Phase 1 — Bridge prototype (laptop, NO hardware)  ← start here
 De-risk ElevenLabs before touching firmware.
