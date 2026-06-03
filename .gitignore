@@ -30,3 +30,7 @@ venv/
 # bridge runtime artifacts
 bridge/out.*
 bridge/.venv/
+
+# hermes-assist-bridge real secrets
+hermes-assist-bridge/bridge.env
+hermes-assist-bridge/api.key

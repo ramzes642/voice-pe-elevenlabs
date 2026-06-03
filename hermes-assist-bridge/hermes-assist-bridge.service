@@ -1,0 +1,16 @@
+[Unit]
+Description=Hermes Assist Bridge for Home Assistant
+After=network-online.target hermes-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/hermes-assist-bridge
+EnvironmentFile=/etc/hermes-assist-bridge/bridge.env
+ExecStart=/usr/bin/python3 /opt/hermes-assist-bridge/bridge.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

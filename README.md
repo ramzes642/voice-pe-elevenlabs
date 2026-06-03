@@ -50,6 +50,7 @@ audio formats and open questions.
 | (this repo) | Umbrella: docs, the `el_bridge` HA integration, checklist | ours |
 | `external/home-assistant-voice-pe` | Voice PE firmware **fork** — home of the custom `el_agent` ESPHome component | fork of `esphome/home-assistant-voice-pe` |
 | `external/voice-kit-xmos-firmware` | XMOS XU316 DSP/AEC firmware **fork** — reference for the AEC pipeline | fork of `esphome/voice-kit-xmos-firmware` |
+| `hermes-assist-bridge/` | The current **turn-based** brain (HA Assist → hermes-agent) + install docs — reference/fallback | ours |
 
 External (not vendored here): **wolt-mcp** (the user's ordering MCP server, runs locally),
 **ElevenLabs Agents** (cloud).
