@@ -83,15 +83,21 @@ async def ws_round_trip(text, out_fmt):
             await ws.send(json.dumps({"type": "conversation_initiation_client_data"}))
             await ws.send(json.dumps({"type": "user_message", "text": text}))
             print(f"sent (ru): {text!r}\nlistening...\n")
-            last = asyncio.get_event_loop().time()
+            loop = asyncio.get_event_loop()
+            start = loop.time()
+            last_audio = None
+            MAX_SECONDS = 20.0
             while True:
+                # Hard deadline + "quiet after audio" exit. Checked every iteration so
+                # periodic pings (which keep recv() busy) can't prevent termination.
+                now = loop.time()
+                if now - start > MAX_SECONDS:
+                    break
+                if audio and last_audio and now - last_audio > 2.5:
+                    break
                 try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=4.0)
+                    raw = await asyncio.wait_for(ws.recv(), timeout=1.0)
                 except asyncio.TimeoutError:
-                    if audio:  # got a reply, then 4s quiet -> done
-                        break
-                    if asyncio.get_event_loop().time() - last > 25:
-                        break
                     continue
                 evt = json.loads(raw)
                 t = evt.get("type", "?")
@@ -103,6 +109,7 @@ async def ws_round_trip(text, out_fmt):
                     b64 = _dig(evt, "audio_event", "audio_base_64") or evt.get("audio_base_64")
                     if b64:
                         audio += base64.b64decode(b64)
+                        last_audio = loop.time()
                 elif t == "user_transcript":
                     print("  USER (stt):", _dig(evt, "user_transcription_event", "user_transcript"))
                 elif t == "agent_response":
