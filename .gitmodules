@@ -1,0 +1,6 @@
+[submodule "external/home-assistant-voice-pe"]
+	path = external/home-assistant-voice-pe
+	url = https://github.com/ramzes642/home-assistant-voice-pe.git
+[submodule "external/voice-kit-xmos-firmware"]
+	path = external/voice-kit-xmos-firmware
+	url = https://github.com/ramzes642/voice-kit-xmos-firmware.git
