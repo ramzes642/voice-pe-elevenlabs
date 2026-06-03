@@ -52,7 +52,8 @@ audio formats and open questions.
 | `external/voice-kit-xmos-firmware` | XMOS XU316 DSP/AEC firmware **fork** — reference for the AEC pipeline | fork of `esphome/voice-kit-xmos-firmware` |
 | `hermes-assist-bridge/` | The current **turn-based** brain (HA Assist → hermes-agent) + install docs — reference/fallback | ours |
 
-External (not vendored here): **wolt-mcp** (the user's ordering MCP server, runs locally),
+External (not vendored here): **wolt-mcp** (the Wolt ordering MCP server — kept in a
+**separate private repo** since it reverse-engineers a private API for real paid orders),
 **ElevenLabs Agents** (cloud).
 
 ## Status
