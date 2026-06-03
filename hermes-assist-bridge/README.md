@@ -75,6 +75,19 @@ curl -s localhost:8765/health | python3 -m json.tool
   Voice PE (set `_CLICK_ENTITY` to your media_player entity).
 - `HERMES_ASSIST_SESSION_RESET_S`, `_MAX_HISTORY_MESSAGES`, `_MAX_TURNS`, `_TIMEOUT`.
 
+## Sounds
+`sounds/double-click-computer-mouse.wav` is the tool-run click. Home Assistant serves its
+config `www/` directory at `/local/`, so copy the file there:
+
+```bash
+cp sounds/double-click-computer-mouse.wav <ha-config>/www/double-click-computer-mouse.wav
+```
+
+That makes it reachable at `/local/double-click-computer-mouse.wav`, matching the default
+`HERMES_ASSIST_CLICK_MEDIA=/local/double-click-computer-mouse.wav` in `bridge.env`. Played
+on `HERMES_ASSIST_CLICK_ENTITY` (your Voice PE media_player) when a tool runs; debounced by
+`HERMES_ASSIST_CLICK_MIN_INTERVAL_S`. Set `HERMES_ASSIST_TOOL_CLICK=0` to disable.
+
 ## Home Assistant side (not included here)
 A small **custom conversation integration** on the HA host posts to this bridge:
 `POST http://<HERMES_ASSIST_HOST>:<PORT>/api/chat` with `Authorization: Bearer <api.key>`

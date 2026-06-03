@@ -34,3 +34,4 @@ bridge/.venv/
 # hermes-assist-bridge real secrets
 hermes-assist-bridge/bridge.env
 hermes-assist-bridge/api.key
+!hermes-assist-bridge/sounds/*.wav
