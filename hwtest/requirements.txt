@@ -1,0 +1,11 @@
+# hwtest — laptop-side tools for testing the real Voice PE
+# install:  uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements.txt
+sounddevice>=0.5      # mic capture + speaker playback (PortAudio, bundled on macOS)
+soundfile>=0.13       # wav/aiff read/write
+numpy>=2
+faster-whisper>=1.1   # local STT with word timestamps (CTranslate2, CPU int8)
+pyserial>=3.5         # Voice PE ESPHome log over USB (USB-JTAG serial)
+websockets>=14        # OpenAI Realtime / ElevenLabs WS
+httpx>=0.27           # ElevenLabs TTS REST
+python-dotenv>=1.0
+esptool>=4.8          # make flash-usb (factory image over USB)

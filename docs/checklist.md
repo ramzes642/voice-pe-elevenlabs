@@ -31,6 +31,17 @@ auth via `xi-api-key` header; events `conversation_initiation_metadata` (carries
 `client_tool_call`→`client_tool_result`, `user_transcript`, `interruption`; send
 `user_message`(text) / `user_audio_chunk`(base64 pcm16k). Turn end = server VAD on trailing silence.
 
+## Hardware test harness (`hwtest/`, laptop ⇄ real Voice PE over air + USB log)
+- [x] `ping_pong.py`: laptop says «Солнце моё» + command, records mic, captures ESPHome log over
+      USB, local whisper per-second timeline, PASS/FAIL verdict (validated 2026-10-03: wake +1.4s,
+      STT +2.8s, answer +4.3s after command on stock fw v14 + hermes bridge)
+- [x] `realtime_openai.py`: OpenAI Realtime session (pcm16 24k, server VAD, barge-in) — written,
+      not yet exercised with a key
+- [ ] Stage 2 driver: OpenAI Realtime model plays the human (multi-turn, judges answers)
+- [x] Root `Makefile`: `make flash` = sync YAML+model → compile on the Pi (ESPHome docker) → OTA → artifacts;
+      `make flash-usb` (esptool over the USB cable), `make logs`, `make test`
+- [ ] Re-run `ping_pong.py` against el_agent firmware once Phase 3 exists; compare timings
+
 ## Phase 2 — Bridge as a Home Assistant integration
 - [ ] Port the prototype into a HA custom integration `el_bridge`
 - [ ] Subscribe to the Voice PE `micro_wake_word` / voice event (ESPHome)

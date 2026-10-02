@@ -47,21 +47,50 @@ audio formats and open questions.
 
 | Path | What | Origin |
 |---|---|---|
-| (this repo) | Umbrella: docs, the `el_bridge` HA integration, checklist | ours |
+| (this repo) | Umbrella: docs, the `el_bridge` HA integration, test tooling, checklist | ours |
+| `bridge/` | `el_bridge`: Phase 1 probe (`probe.py`) today, HA custom integration later | ours |
+| `hwtest/` | Laptop-side harness for the **real** Voice PE: plays wake word + command, records the answer, aligns with the device's USB log, local whisper timeline. Plus an OpenAI Realtime client | ours |
+| `sun-wakeword/` | Russian wake word **«солнце моё»** for `micro_wake_word`: training pipeline, trained models, the firmware YAML currently flashed | ours |
+| `hermes-assist-bridge/` | The current **turn-based** brain (HA Assist → hermes-agent) + install docs — reference/fallback | ours |
+| `Makefile` | `make flash`: build the firmware on the Raspberry Pi (ESPHome docker) and OTA it to the колонка | ours |
 | `external/home-assistant-voice-pe` | Voice PE firmware **fork** — home of the custom `el_agent` ESPHome component | fork of `esphome/home-assistant-voice-pe` |
 | `external/voice-kit-xmos-firmware` | XMOS XU316 DSP/AEC firmware **fork** — reference for the AEC pipeline | fork of `esphome/voice-kit-xmos-firmware` |
-| `hermes-assist-bridge/` | The current **turn-based** brain (HA Assist → hermes-agent) + install docs — reference/fallback | ours |
 
 External (not vendored here): **wolt-mcp** (the Wolt ordering MCP server — kept in a
 **separate private repo** since it reverse-engineers a private API for real paid orders),
 **ElevenLabs Agents** (cloud).
 
+Submodules are not fetched by default:
+
+```bash
+git submodule update --init --recursive
+```
+
 ## Status
 
-🟡 **Scaffolding / design.** No bridge or firmware code yet. See
-[`docs/checklist.md`](docs/checklist.md) for the phased plan. Phase 1 is a standalone
-bridge prototype (laptop, no hardware) to validate the ElevenLabs Agent WebSocket
-audio format, tool protocol, and Russian before touching firmware.
+- ✅ **Phase 0 / 1** — scaffolding; ElevenLabs Agent validated from a laptop: `pcm_16000` in/out,
+  Russian STT/TTS, `client_tool_call` round-trip, ≈0.28 s end-of-speech → first audio.
+- ✅ **Device on the bench** — the колонка runs the stock pipeline with the «солнце моё» wake word
+  (firmware v14/v15, `sun-wakeword/`) and hermes as the brain. `hwtest/ping_pong.py` drives it
+  acoustically from the laptop and passes: wake +1.4 s, STT +3.2 s, answer +5.2 s after the command.
+- 🟡 **Next: Phase 2 / 3** — `el_bridge` as a HA integration and the `el_agent` firmware component.
+  See [`docs/checklist.md`](docs/checklist.md).
+
+## Working with the real device
+
+The Voice PE sits on the LAN (`192.168.68.83`) and, when plugged into the laptop over USB-C,
+exposes its ESPHome log on `/dev/cu.usbmodem*`. Home Assistant and the ESPHome builder run on a
+Raspberry Pi (`rpi` in `~/.ssh/config`).
+
+```bash
+make flash      # sync YAML + wake-word model to the Pi → compile in docker → OTA → bins to sun-wakeword/firmware/v<date>/
+make logs       # live ESPHome log over USB
+make test       # hwtest/ping_pong.py: «Солнце моё» … «Это пинг, ответь понг» → per-second timeline + verdict
+```
+
+`hwtest/` needs its own venv (`cd hwtest && uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements.txt`);
+no API keys are required for the ping/pong test. Details in [`hwtest/README.md`](hwtest/README.md),
+firmware/retraining details in [`sun-wakeword/README.md`](sun-wakeword/README.md).
 
 ## Security
 

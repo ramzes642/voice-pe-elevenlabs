@@ -280,6 +280,11 @@ rsync -av rpi:/tmp/s/ audio_data/positives_my/
 
 ## 6. Сборка и прошивка ESPHome
 
+> **Короткий путь:** из корня репозитория `make flash` (sync → compile на малинке → OTA →
+> артефакты в `firmware/v<дата>/`). Отдельно: `make build`, `make upload`, `make artifacts V=15`,
+> `make flash-usb V=15`, `make logs`, `make test`. Ниже — то же самое руками.
+
+
 Сборка идёт **на малине** через Docker-образ `ghcr.io/esphome/esphome:latest`
 (YAML требует `min_version: 2026.5.0`). Докер там под sudo.
 
