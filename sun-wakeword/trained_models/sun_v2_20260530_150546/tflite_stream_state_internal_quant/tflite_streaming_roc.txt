@@ -1,0 +1,10 @@
+AUC 0.11042
+Cutoff 1.00: frr=1.0000; faph=0.000
+Cutoff 0.99: frr=0.0342; faph=0.187
+Cutoff 0.98: frr=0.0137; faph=0.375
+Cutoff 0.96: frr=0.0137; faph=0.562
+Cutoff 0.93: frr=0.0068; faph=0.750
+Cutoff 0.85: frr=0.0068; faph=0.937
+Cutoff 0.83: frr=0.0068; faph=1.125
+Cutoff 0.78: frr=0.0000; faph=1.687
+Cutoff 0.78: frr=0.0000; faph=2.000

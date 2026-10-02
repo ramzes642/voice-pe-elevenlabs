@@ -1,0 +1,30 @@
+# ---- Тяжёлые ресурсы: не коммитим (живут локально, см. README разделы 1 и 3) ----
+.venv/
+data/
+precomputed_features/
+audio_data/
+trained_model/
+server_logs/
+*.log
+training_parameters_v2.run.yaml
+__pycache__/
+
+# Форк micro-wake-word — отдельный git-репозиторий; патчи к нему лежат в patches/
+micro-wake-word/
+
+# Прогоны тренировки: оставляем только конфиг, итоговый tflite и ROC
+trained_models/*
+!trained_models/*/
+trained_models/*/*
+!trained_models/*/training_config.yaml
+!trained_models/*/tflite_stream_state_internal_quant/
+trained_models/*/tflite_stream_state_internal_quant/*
+!trained_models/*/tflite_stream_state_internal_quant/*.tflite
+!trained_models/*/tflite_stream_state_internal_quant/*.txt
+
+# Собранные прошивки (.bin уже игнорируются в корне репо), на всякий случай
+firmware/**/*.bin
+
+# Windows Zone.Identifier мусор
+*:Zone.Identifier
+.claude/
