@@ -49,7 +49,8 @@ audio formats and open questions.
 |---|---|---|
 | (this repo) | Umbrella: docs, the `el_bridge` HA integration, test tooling, checklist | ours |
 | `bridge/` | `el_bridge`: Phase 1 probe (`probe.py`) today, HA custom integration later | ours |
-| `rtbridge/` | **Realtime bridge** on the Pi: Voice PE native API (mic in, media player out) ⇄ OpenAI Realtime. The thing that makes the колонка talk today | ours |
+| `custom_components/rtbridge/` | **The same bridge as a Home Assistant integration**: configured from the HA UI, HA commands via the `home_assistant` tool (`conversation.process` with any agent) | ours |
+| `rtbridge/` | Standalone realtime bridge on the Pi (systemd): Voice PE native API (mic in, media player out) ⇄ OpenAI Realtime — the first working version, kept for HA-less use | ours |
 | `hwtest/` | Laptop-side harness for the **real** Voice PE: plays wake word + phrases, records the answer, aligns with the device's USB log, local whisper timeline (`ping_pong.py`, `dialog.py`) | ours |
 | `sun-wakeword/` | Russian wake word **«солнце моё»** for `micro_wake_word`: training pipeline, trained models, the firmware YAML currently flashed | ours |
 | `hermes-assist-bridge/` | The current **turn-based** brain (HA Assist → hermes-agent) + install docs — reference/fallback | ours |
@@ -76,8 +77,12 @@ git submodule update --init --recursive
   ~2 s after you stop talking, you can interrupt mid-sentence, «спасибо, пока» ends the session.
   Runs as a systemd service on the Raspberry Pi; HA stays connected but is not in the loop.
   Firmware v17 = stock + patched `voice_assistant` subscription + WAV codec (`make flash`).
-- 🟡 **Next** — tools (HA actions, wolt) as Realtime function calls; latency tuning; decide whether
-  the ElevenLabs path (`bridge/`, Phase 2/3) is still needed. See [`docs/checklist.md`](docs/checklist.md).
+- 🟡 **HA integration** (`custom_components/rtbridge/`) — same bridge inside Home Assistant with a config
+  flow (pick the ESPHome device, paste the OpenAI key) and an options flow (model, voice, persona, which
+  conversation agent executes smart-home commands: built-in intents or hermes). Deployed with `make ha-deploy`,
+  awaiting an HA restart + first-run test.
+- 🟡 **Next** — latency tuning; wolt as a tool; decide whether the ElevenLabs path (`bridge/`) is still needed.
+  See [`docs/checklist.md`](docs/checklist.md).
 
 ## Working with the real device
 
@@ -90,6 +95,7 @@ make flash            # sync YAML + patched components + wake-word model → com
 make logs             # live ESPHome log over USB
 make test             # hwtest/ping_pong.py: «Солнце моё» … «Это пинг, ответь понг» → per-second timeline + verdict
 make bridge-deploy    # rsync rtbridge/ to the Pi + venv;  make bridge-restart / bridge-logs / bridge-stop
+make ha-deploy        # copy custom_components/rtbridge into HA's config dir (+ import check in the container)
 ```
 
 Scripted conversation from the laptop (phrase, seconds to wait, phrase, …):

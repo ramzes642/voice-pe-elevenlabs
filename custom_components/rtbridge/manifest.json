@@ -1,0 +1,14 @@
+{
+  "domain": "rtbridge",
+  "name": "Realtime Voice Bridge (OpenAI)",
+  "version": "0.1.0",
+  "config_flow": true,
+  "dependencies": ["http", "conversation", "esphome"],
+  "after_dependencies": ["esphome"],
+  "documentation": "https://github.com/ramzes642/voice-pe-elevenlabs/tree/main/custom_components/rtbridge",
+  "issue_tracker": "https://github.com/ramzes642/voice-pe-elevenlabs/issues",
+  "codeowners": ["@ramzes642"],
+  "integration_type": "service",
+  "iot_class": "cloud_push",
+  "requirements": []
+}

@@ -57,7 +57,12 @@ Goal: «солнце моё» → live full-duplex conversation through the ко
       RUN_END → device idle. Device-side «stop» / wake word also end the session. Idle timeout 25 s
 - [x] Device crash on STOP-right-after-start (double free in decoder task) avoided: HTTP stream paced
       to real time (+0.6 s lead), STOP only for announcements older than 1.5 s
-- [ ] Tune first-response latency (semantic VAD eagerness, greeting), persona, HA tools via client tools
+- [x] HA custom integration `custom_components/rtbridge`: config flow (ESPHome device picker + OpenAI key),
+      options (model/voice/persona/agent/timeouts/gain/eagerness), `home_assistant(command)` tool →
+      `conversation.process` with the chosen agent (built-in intents or hermes). `make ha-deploy` done,
+      imports verified inside the HA container
+- [ ] Restart HA, add the integration in the UI, stop the standalone systemd bridge, test «включи свет…»
+- [ ] Tune first-response latency (semantic VAD eagerness, greeting), persona
 - [ ] Fallback to HA when rtbridge is down (patched fw keeps no fallback pointer — HA gets the
       device back only on its next reconnect)
 

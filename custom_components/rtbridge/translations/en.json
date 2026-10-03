@@ -1,0 +1,28 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Realtime voice bridge",
+        "description": "Pick the ESPHome voice device (host and encryption key are taken from its ESPHome entry) and enter an OpenAI API key.",
+        "data": {"esphome_entry_id": "Voice device (ESPHome)", "api_key": "OpenAI API key"}
+      }
+    },
+    "error": {"invalid_auth": "OpenAI rejected the key", "cannot_connect": "Could not reach OpenAI", "no_device": "Device not found"},
+    "abort": {"already_configured": "This device is already configured"}
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Realtime voice bridge",
+        "data": {
+          "model": "Realtime model", "voice": "Voice", "instructions": "Agent instructions (persona)",
+          "ha_tool": "Let the agent control Home Assistant (home_assistant tool)",
+          "command_agent": "Conversation agent that executes commands", "language": "Language",
+          "greeting": "Greet on wake", "vad_eagerness": "Turn detection eagerness",
+          "idle_timeout": "End session after silence (s)", "max_session": "Max session length (s)",
+          "mic_gain": "Microphone gain (channel without AGC)", "audio_base_url": "Audio base URL override (http://<HA LAN IP>:8123)"
+        }
+      }
+    }
+  }
+}

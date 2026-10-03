@@ -25,7 +25,7 @@ RPI_BUILD   := $(RPI_DIR)/.esphome/build/home-assistant-voice/.pioenvs/home-assi
 DOCKER      := sudo docker run --rm --network host -v $(RPI_DIR):/config -v $(RPI_DIR)/.esphome:/cache $(ESPHOME_IMG)
 OUT         := $(FW_DIR)/v$(V)
 
-.PHONY: help sync build upload flash artifacts flash-usb logs test clean-build bridge-deploy bridge-install bridge-restart bridge-stop bridge-logs bridge-loopback
+.PHONY: help sync build upload flash artifacts flash-usb logs test clean-build bridge-deploy bridge-install bridge-restart bridge-stop bridge-logs bridge-loopback ha-deploy ha-restart ha-logs
 
 help:
 	@sed -n '2,12p' $(MAKEFILE_LIST)
@@ -102,3 +102,20 @@ bridge-logs:
 ## bridge-loopback: stage-1 check, runs in the foreground on the Pi (stop the service first)
 bridge-loopback:
 	ssh -t $(RPI) 'cd $(BRIDGE_DIR) && .venv/bin/python -m rtbridge.main --mode loopback --record-dir rec'
+
+# ---- rtbridge as a Home Assistant custom integration (HA runs in docker on the Pi) -------------
+HA_CONFIG ?= /root/ha-config
+HA_CONTAINER ?= homeassistant
+
+## ha-deploy: copy custom_components/rtbridge into HA's config dir and import-check it inside the container
+ha-deploy:
+	rsync -a --delete --exclude __pycache__ custom_components/rtbridge/ $(RPI):/tmp/rtbridge_cc/
+	ssh $(RPI) 'sudo mkdir -p $(HA_CONFIG)/custom_components && sudo rsync -a --delete /tmp/rtbridge_cc/ $(HA_CONFIG)/custom_components/rtbridge/ \
+	  && sudo docker exec -w /config -e PYTHONPATH=/config $(HA_CONTAINER) python3 -c "import custom_components.rtbridge, custom_components.rtbridge.config_flow, custom_components.rtbridge.bridge; print(\"rtbridge imports OK inside HA\")"'
+
+## ha-restart: restart the Home Assistant container (ask the owner first — it is live home infrastructure)
+ha-restart:
+	ssh $(RPI) 'sudo docker restart $(HA_CONTAINER) && echo restarted'
+
+ha-logs:
+	ssh $(RPI) 'sudo docker logs -f --tail 100 $(HA_CONTAINER) 2>&1 | grep -i rtbridge'

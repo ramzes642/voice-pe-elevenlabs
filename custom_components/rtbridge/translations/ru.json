@@ -1,0 +1,28 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Realtime голосовой мост",
+        "description": "Выберите голосовое устройство ESPHome (хост и ключ шифрования берутся из его записи ESPHome) и введите ключ OpenAI.",
+        "data": {"esphome_entry_id": "Голосовое устройство (ESPHome)", "api_key": "Ключ OpenAI API"}
+      }
+    },
+    "error": {"invalid_auth": "OpenAI отклонил ключ", "cannot_connect": "Не удалось связаться с OpenAI", "no_device": "Устройство не найдено"},
+    "abort": {"already_configured": "Это устройство уже настроено"}
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Realtime голосовой мост",
+        "data": {
+          "model": "Модель Realtime", "voice": "Голос", "instructions": "Инструкции агенту (персона)",
+          "ha_tool": "Разрешить агенту управлять Home Assistant (инструмент home_assistant)",
+          "command_agent": "Агент разговора, который выполняет команды", "language": "Язык",
+          "greeting": "Приветствие после ключевого слова", "vad_eagerness": "Нетерпеливость определения конца реплики",
+          "idle_timeout": "Завершать сессию после тишины (с)", "max_session": "Максимальная длина сессии (с)",
+          "mic_gain": "Усиление микрофона (канал без AGC)", "audio_base_url": "Переопределить базовый URL аудио (http://<IP HA в LAN>:8123)"
+        }
+      }
+    }
+  }
+}
