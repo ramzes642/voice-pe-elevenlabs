@@ -88,6 +88,12 @@ Goal: «солнце моё» → live full-duplex conversation through the ко
 - [x] False «устройство недоступно» on every area command: HA's intent response lists area/device
       targets too, which have no state; only entity targets are checked now. Kitchen (Tapo S210 via
       Matter) verified on/off by voice
+- [~] Dashboard «Основная» voice sweep (2026-10-03): чердак ✓, бойлер ✓ (states verified); «люстра» failed —
+      model sent a declined name («Люстру») → entity-name normalization added; «вентилятор» failed —
+      two entities share the name (Гостиная/Кухня) → inventory now flags duplicates and demands the area;
+      pre-ready audio trimmed to 0.3 s (first utterance after the chime was often garbled). Series
+      stopped by OpenAI `insufficient_quota` (credits exhausted). TODO after top-up: AC on/24°/22°/off,
+      «Охлаждение спальни», TV, люстра, вентилятор
 - [ ] Known: words spoken while the wake chime is still playing (~0.8 s after the wake word) are often
       lost or garbled (chime + AEC residual). Speak after the chime, or turn off the device's «Wake sound»
       switch. Mic ducking applies only during the agent's own playback for that reason

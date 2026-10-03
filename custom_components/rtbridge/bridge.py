@@ -73,7 +73,7 @@ def normalize_areas(command: str, area_names: list[str]) -> str:
     return out
 
 
-def exposed_inventory(hass: HomeAssistant, limit: int = 120) -> str:
+def exposed_inventory(hass: HomeAssistant, limit: int = 120, dup_names: set[str] | None = None) -> str:
     """One line per entity exposed to Assist: «Имя (домен, зона) [алиасы]». Lets the model phrase
     commands with the exact names HA matches literally, instead of guessing declensions."""
     areas = {a.id: a.name for a in ar.async_get(hass).async_list_areas()}
@@ -96,12 +96,47 @@ def exposed_inventory(hass: HomeAssistant, limit: int = 120) -> str:
             line = f"{domain} «{name}» ({areas.get(area_id, 'без зоны')})"
         else:
             line = f"{name} ({domain}, {areas.get(area_id, 'без зоны')}) сейчас: {state.state}"
+            if dup_names and name.lower() in dup_names:
+                line += f" — имя не уникально, обязательно добавляй зону: «включи {name} в {areas.get(area_id, '…')}»"
         if aliases:
             line += " алиасы: " + ", ".join(aliases)
         lines.append(line)
         if len(lines) >= limit:
             break
     return "\n".join(sorted(lines))
+
+
+def exposed_names(hass: HomeAssistant) -> tuple[list[str], set[str]]:
+    """Exact names + aliases of exposed entities, and the set of names used by more than one entity."""
+    ent_reg = er.async_get(hass)
+    names: list[str] = []
+    seen: dict[str, int] = {}
+    for state in hass.states.async_all():
+        eid = state.entity_id
+        if eid.split(".")[0] in ("sensor", "binary_sensor", "update", "button", "event", "number", "select", "device_tracker"):
+            continue
+        if not async_should_expose(hass, "conversation", eid):
+            continue
+        ent = ent_reg.async_get(eid)
+        for n in [state.name] + [a for a in ((ent.aliases if ent else None) or ()) if isinstance(a, str)]:
+            if n:
+                names.append(n)
+                seen[n.lower()] = seen.get(n.lower(), 0) + 1
+    dups = {n for n, c in seen.items() if c > 1}
+    return names, dups
+
+
+def normalize_names(command: str, names: list[str]) -> str:
+    """«включи люстру» → «включи Люстра»: declined forms of exposed entity names → exact names
+    (HA matches names literally). Multi-word names are matched word by word by stem."""
+    out = command.replace("ё", "е")
+    for name in sorted(set(names), key=len, reverse=True):
+        words = name.replace("ё", "е").split()
+        if not words or all(len(w) < 4 for w in words):
+            continue   # too short to stem safely («1», «ТВ»)
+        pat = r"\b" + r"\s+".join(_stem_pattern(w) if len(w) >= 4 else re.escape(w.lower()) for w in words) + r"\b"
+        out = re.sub(pat, name, out, flags=re.IGNORECASE)
+    return out
 
 
 def _quote_in(quote: str, text: str) -> bool:
@@ -176,7 +211,10 @@ class Session:
             self.pending.append(pcm24)
             return
         if self.pending:
-            for p in self.pending:
+            # Only the last ~0.3 s of pre-ready audio is worth sending; the rest is the wake chime
+            # and its echo, and a big burst at session start degraded the model's hearing of the
+            # first utterance.
+            for p in self.pending[-10:]:
                 await self.oai.send_audio(p)
             self.pending.clear()
         await self.oai.send_audio(pcm24)
@@ -239,7 +277,8 @@ class Session:
 
         tools = [TOOL_END]
         if self.b.ha_tool:
-            inv = exposed_inventory(hass)
+            _names, dups = exposed_names(hass)
+            inv = exposed_inventory(hass, dup_names=dups)
             ha_tool = dict(TOOL_HA)
             ha_tool["description"] = (TOOL_HA["description"] +
                 " Устройства и зоны, которые знает дом (называй их ТОЧНО этими именами, в именительном падеже, "
@@ -290,7 +329,8 @@ class Session:
         if not command:
             return {"error": "empty command"}
         areas = [a.name for a in ar.async_get(self.b.hass).async_list_areas() if a.name]
-        normalized = normalize_areas(command, areas)
+        names, _dups = exposed_names(self.b.hass)
+        normalized = normalize_areas(normalize_names(command, names), areas)
         if normalized != command:
             log.info("area names normalized: %r → %r", command, normalized)
             command = normalized
