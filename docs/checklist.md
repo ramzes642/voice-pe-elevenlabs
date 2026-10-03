@@ -85,6 +85,9 @@ Goal: «солнце моё» → live full-duplex conversation through the ко
       the model now sees the exposed-entity inventory (name, domain, area, state, aliases; scenes marked
       activate-only) in the tool description and names targets exactly; tool result lists targets and flags
       unavailable ones; mic ducking extended 0.8 s past playback end; no tool calls on garbled input
+- [x] False «устройство недоступно» on every area command: HA's intent response lists area/device
+      targets too, which have no state; only entity targets are checked now. Kitchen (Tapo S210 via
+      Matter) verified on/off by voice
 - [ ] Known: words spoken while the wake chime is still playing (~0.8 s after the wake word) are often
       lost or garbled (chime + AEC residual). Speak after the chime, or turn off the device's «Wake sound»
       switch. Mic ducking applies only during the agent's own playback for that reason

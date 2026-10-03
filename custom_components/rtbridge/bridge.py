@@ -315,10 +315,13 @@ class Session:
             # honestly when a target is unavailable (HA still says action_done in that case)
             # Only flag targets that are unavailable; raw states lag behind (Zigbee reports later)
             # and confused the model into «дом сказал включено, но состояние выключено».
+            # HA lists matched targets of several types (entity / area / device / floor); only
+            # entities have a state. Checking an area id against the state machine returned None
+            # and made every area command look «unavailable».
             targets = resp.get("data", {}).get("success", []) + resp.get("data", {}).get("failed", [])
             out["targets"] = [t.get("name") for t in targets]
-            dead = [t.get("name") for t in targets
-                    if (st := self.b.hass.states.get(t.get("id", ""))) is None or st.state == "unavailable"]
+            dead = [t.get("name") for t in targets if t.get("type") == "entity"
+                    and (st := self.b.hass.states.get(t.get("id", ""))) is not None and st.state == "unavailable"]
             if dead:
                 out["ok"] = False
                 out["error"] = f"недоступно (unavailable), команда не сработала: {', '.join(dead)}"
