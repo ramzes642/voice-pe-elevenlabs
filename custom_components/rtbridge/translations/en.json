@@ -27,7 +27,7 @@
         "data": {
           "model": "Realtime model",
           "voice": "Voice",
-          "instructions": "Agent instructions (persona)",
+          "instructions": "Agent persona and style (tool rules are appended automatically)",
           "ha_tool": "Let the agent control Home Assistant (home_assistant tool)",
           "command_agent": "Conversation agent that executes commands",
           "language": "Language",
@@ -39,7 +39,8 @@
           "audio_base_url": "Audio base URL override (http://HA-LAN-IP:8123)",
           "echo_guard": "Mute mic for N s when the device starts speaking (echo guard)",
           "turn_stall": "Force the turn if no answer N s after speech stops",
-          "playback_duck": "Mic multiplier while the device is speaking (echo vs barge-in)"
+          "playback_duck": "Mic multiplier while the device is speaking (echo vs barge-in)",
+          "end_after_action": "End the session right after a completed command"
         }
       }
     }

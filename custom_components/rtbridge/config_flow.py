@@ -10,7 +10,8 @@ from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (CONF_API_KEY, CONF_ESPHOME_ENTRY, CONF_HOST, CONF_NOISE_PSK, DEFAULT_COMMAND_AGENT,
-                    DEFAULT_IDLE_TIMEOUT, DEFAULT_INSTRUCTIONS, DEFAULT_LANGUAGE, DEFAULT_MAX_SESSION,
+                    DEFAULT_IDLE_TIMEOUT, DEFAULT_INSTRUCTIONS, DEFAULT_PERSONA, DEFAULT_LANGUAGE, DEFAULT_MAX_SESSION,
+                    OPT_END_AFTER_ACTION, DEFAULT_END_AFTER_ACTION,
                     DEFAULT_MIC_GAIN, DEFAULT_MODEL, DEFAULT_VAD_EAGERNESS, DEFAULT_VOICE, DOMAIN,
                     OPT_AUDIO_BASE_URL, OPT_COMMAND_AGENT, OPT_GREETING, OPT_HA_TOOL, OPT_IDLE_TIMEOUT,
                     OPT_INSTRUCTIONS, OPT_LANGUAGE, OPT_MAX_SESSION, OPT_MIC_GAIN, OPT_MODEL, OPT_VAD_EAGERNESS,
@@ -97,8 +98,9 @@ class RtBridgeOptionsFlow(config_entries.OptionsFlow):
             vol.Required(OPT_VOICE, default=o.get(OPT_VOICE, DEFAULT_VOICE)): selector.SelectSelector(
                 selector.SelectSelectorConfig(options=["marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"],
                                               custom_value=True, mode=selector.SelectSelectorMode.DROPDOWN)),
-            vol.Optional(OPT_INSTRUCTIONS, default=o.get(OPT_INSTRUCTIONS) or DEFAULT_INSTRUCTIONS): selector.TextSelector(
+            vol.Optional(OPT_INSTRUCTIONS, default=(o.get(OPT_INSTRUCTIONS) if o.get(OPT_INSTRUCTIONS) and "инструмент" not in o.get(OPT_INSTRUCTIONS, "").lower() else DEFAULT_PERSONA)): selector.TextSelector(
                 selector.TextSelectorConfig(multiline=True)),
+            vol.Required(OPT_END_AFTER_ACTION, default=o.get(OPT_END_AFTER_ACTION, DEFAULT_END_AFTER_ACTION)): bool,
             vol.Required(OPT_HA_TOOL, default=o.get(OPT_HA_TOOL, True)): bool,
             vol.Required(OPT_COMMAND_AGENT, default=o.get(OPT_COMMAND_AGENT, DEFAULT_COMMAND_AGENT)): selector.ConversationAgentSelector(
                 selector.ConversationAgentSelectorConfig(language=o.get(OPT_LANGUAGE, DEFAULT_LANGUAGE))),

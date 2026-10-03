@@ -44,6 +44,7 @@ class RealtimeSession:
         self.speech_stopped_at: float | None = None   # for the stuck-turn watchdog
         self.response_active = False
         self.in_speech = False
+        self.tool_busy = False
         self._task: asyncio.Task | None = None
 
     async def connect(self):
@@ -154,12 +155,18 @@ class RealtimeSession:
                         args = {}
                     log.info("tool call %s(%s)", name, args)
                     if self.on_tool:
-                        result = await self.on_tool(name, call_id, args)
-                        await self.send({"type": "conversation.item.create", "item": {
-                            "type": "function_call_output", "call_id": call_id,
-                            "output": result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)}})
-                        if not (isinstance(result, dict) and result.get("_no_response")):
-                            await self.request_response()
+                        self.tool_busy = True
+                        try:
+                            result = await self.on_tool(name, call_id, args)
+                            await self.send({"type": "conversation.item.create", "item": {
+                                "type": "function_call_output", "call_id": call_id,
+                                "output": result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)}})
+                            if not (isinstance(result, dict) and result.get("_no_response")):
+                                await self.request_response()
+                                self.response_active = True   # until response.created/done arrives
+                        finally:
+                            self.last_activity = time.monotonic()
+                            self.tool_busy = False
                 elif t == "session.updated":
                     self.ready.set()
                 elif t == "error":

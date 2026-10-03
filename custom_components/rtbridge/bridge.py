@@ -16,7 +16,8 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.network import get_url
 
-from .const import (DEFAULT_COMMAND_AGENT, DEFAULT_IDLE_TIMEOUT, DEFAULT_INSTRUCTIONS, DEFAULT_LANGUAGE,
+from .const import (DEFAULT_COMMAND_AGENT, DEFAULT_IDLE_TIMEOUT, DEFAULT_INSTRUCTIONS, DEFAULT_LANGUAGE, DEFAULT_PERSONA, TOOL_RULES,
+                    OPT_END_AFTER_ACTION, DEFAULT_END_AFTER_ACTION,
                     DEFAULT_MAX_SESSION, DEFAULT_MIC_GAIN, DEFAULT_MODEL, DEFAULT_VAD_EAGERNESS, DEFAULT_VOICE,
                     CONF_API_KEY, CONF_HOST, CONF_NOISE_PSK, OPT_AUDIO_BASE_URL, OPT_COMMAND_AGENT, OPT_GREETING,
                     OPT_HA_TOOL, OPT_IDLE_TIMEOUT, OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD, DEFAULT_GREETING, OPT_TURN_STALL, DEFAULT_TURN_STALL, OPT_PLAYBACK_DUCK, DEFAULT_PLAYBACK_DUCK, OPT_START_MUTE, DEFAULT_START_MUTE, OPT_INSTRUCTIONS, OPT_LANGUAGE, OPT_MAX_SESSION, OPT_MIC_GAIN,
@@ -213,6 +214,9 @@ class Session:
         self.pending: list[bytes] = []
         self.user_text: list[str] = []
         self.ha_conversation_id: str | None = None
+        self.pending_end: str | None = None   # end the session once the confirmation has played
+        self.pending_end_at = 0.0
+        self.last_user_text_at = 0.0
         self.mic_chunks = 0
         self.mute_until = 0.0     # echo guard: ignore the mic for the first moments of each announcement
         self._tasks: list[asyncio.Task] = []
@@ -286,7 +290,7 @@ class Session:
                     await self.oai.force_turn()
                 # "Silence" = nobody is talking: not the user (VAD), not the model (response in
                 # flight), not the speaker (playback, which lags the audio stream by seconds).
-                busy = self.oai.in_speech or self.oai.response_active or self.b.dev.playing
+                busy = self.oai.in_speech or self.oai.response_active or self.oai.tool_busy or self.b.dev.playing
                 quiet_since = max(self.oai.last_activity, self.b.dev.idle_since)
                 if not busy and time.monotonic() - quiet_since > self.b.idle_timeout:
                     await self.end("idle"); return
@@ -317,6 +321,8 @@ class Session:
 
         def on_user(t: str):
             log.info("USER:  %s", t); self.user_text.append(t)
+            if t.strip():
+                self.last_user_text_at = time.monotonic()
 
         def on_agent(t: str):
             log.info("AGENT: %s", t); agent_text["cur"] = ""
@@ -370,12 +376,18 @@ class Session:
             log.info("agent ends the conversation: %r", quote)
             asyncio.get_running_loop().create_task(self._end_after_playback())
             return {"ok": True, "_no_response": True}
-        if name == "home_assistant":
-            return await self._ha_command(args.get("command") or "")
-        if name == "climate_control":
-            return await self._climate(args)
-        if name == "device_control":
-            return await self._device(args)
+        if name in ("home_assistant", "climate_control", "device_control"):
+            if name == "home_assistant":
+                res = await self._ha_command(args.get("command") or "")
+            elif name == "climate_control":
+                res = await self._climate(args)
+            else:
+                res = await self._device(args)
+            if self.b.end_after_action and isinstance(res, dict) and res.get("ok") and res.get("response_type", "action_done") == "action_done":
+                self.pending_end = f"action done ({name})"
+                self.pending_end_at = time.monotonic()
+                asyncio.get_running_loop().create_task(self._end_after_confirmation())
+            return res
         return {"error": f"unknown tool {name}", "_no_response": True}
 
     async def _ha_command(self, command: str) -> dict:
@@ -625,6 +637,26 @@ class Session:
         log.info("climate %s → %s", args, result)
         return result
 
+    async def _end_after_confirmation(self):
+        """Command executed: let the model say «Готово», wait for the device to finish playing it,
+        then end — unless the user started talking again meanwhile."""
+        reason = self.pending_end
+        for _ in range(80):            # up to 8 s for the confirmation audio to start
+            await asyncio.sleep(0.1)
+            if self.pending_end is None or self.ending:
+                return
+            if self.stream is not None and self.stream.closed:
+                break
+        await self.b.dev.wait_playback_done(15)
+        await asyncio.sleep(0.3)
+        # Keep the session only if the user really said something after the command (a non-empty
+        # transcript) or is talking right now; a VAD blip from the echo of «Готово» does not count.
+        if self.pending_end is None or self.ending or self.oai.in_speech or self.last_user_text_at > self.pending_end_at:
+            log.info("end-after-action skipped: user continued")
+            self.pending_end = None
+            return
+        await self.end(reason or "action done")
+
     async def _end_after_playback(self):
         for _ in range(100):
             if self.stream is None or self.stream.closed:
@@ -641,7 +673,11 @@ class RtBridge:
         self.api_key = entry.data[CONF_API_KEY]
         self.model = o.get(OPT_MODEL, DEFAULT_MODEL)
         self.voice = o.get(OPT_VOICE, DEFAULT_VOICE)
-        self.instructions = o.get(OPT_INSTRUCTIONS) or DEFAULT_INSTRUCTIONS
+        persona = (o.get(OPT_INSTRUCTIONS) or "").strip()
+        if not persona or "инструмент" in persona.lower():
+            persona = DEFAULT_PERSONA   # empty, or a stale copy of an old full prompt saved by the form
+        self.instructions = persona + "\n\n" + TOOL_RULES
+        self.end_after_action = bool(o.get(OPT_END_AFTER_ACTION, DEFAULT_END_AFTER_ACTION))
         self.command_agent = o.get(OPT_COMMAND_AGENT, DEFAULT_COMMAND_AGENT)
         self.language = o.get(OPT_LANGUAGE, DEFAULT_LANGUAGE)
         self.idle_timeout = float(o.get(OPT_IDLE_TIMEOUT, DEFAULT_IDLE_TIMEOUT))
