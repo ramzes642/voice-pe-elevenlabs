@@ -75,6 +75,13 @@ Goal: «солнце моё» → live full-duplex conversation through the ко
 - [x] Greeting off by default (collided with users who speak right after the wake word), echo guard 0.5 s
 - [x] Stuck-turn watchdog: semantic VAD once stalled 10 s after a complete phrase; if no response
       starts 2 s after speech_stopped the bridge commits the buffer and requests a response
+- [x] Kitchen light verified against the recorder DB (off/on/off at 13:01:09/19/29): HA's Russian intents
+      match area names literally, so the tool now rewrites declined area names («на кухне» → «на Кухня»)
+      from the area registry. Mic is ducked x0.3 while the device speaks (its own voice had leaked back
+      into the transcript). NB «свет в гостиной» earlier reported action_done while the entity was
+      unavailable after HA restarts — HA does not treat that as an error.
+- [ ] Residual: rare device reboot at session end — lwIP select/semaphore assert in tcp_input (not in
+      our code; device recovers in ~10 s and the bridge reconnects). Investigate if it becomes frequent
 - [ ] Tune first-response latency (semantic VAD eagerness), persona, wolt as a tool
 - [ ] Fallback to HA when rtbridge is down (patched fw keeps no fallback pointer — HA gets the
       device back only on its next reconnect)

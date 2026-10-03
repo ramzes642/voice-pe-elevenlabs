@@ -171,6 +171,10 @@ class VoicePE:
         self.client.media_player_command(self.media_key, command=MediaPlayerCommand.STOP, announcement=True)
         return True
 
+    @property
+    def playing(self) -> bool:
+        return not self._player_idle.is_set()
+
     async def wait_playback_done(self, timeout: float = 30.0):
         try:
             await asyncio.wait_for(self._player_idle.wait(), timeout)

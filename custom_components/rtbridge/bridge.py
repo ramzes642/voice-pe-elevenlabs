@@ -3,18 +3,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 
 import numpy as np
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.network import get_url
 
 from .const import (DEFAULT_COMMAND_AGENT, DEFAULT_IDLE_TIMEOUT, DEFAULT_INSTRUCTIONS, DEFAULT_LANGUAGE,
                     DEFAULT_MAX_SESSION, DEFAULT_MIC_GAIN, DEFAULT_MODEL, DEFAULT_VAD_EAGERNESS, DEFAULT_VOICE,
                     CONF_API_KEY, CONF_HOST, CONF_NOISE_PSK, OPT_AUDIO_BASE_URL, OPT_COMMAND_AGENT, OPT_GREETING,
-                    OPT_HA_TOOL, OPT_IDLE_TIMEOUT, OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD, DEFAULT_GREETING, OPT_TURN_STALL, DEFAULT_TURN_STALL, OPT_INSTRUCTIONS, OPT_LANGUAGE, OPT_MAX_SESSION, OPT_MIC_GAIN,
+                    OPT_HA_TOOL, OPT_IDLE_TIMEOUT, OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD, DEFAULT_GREETING, OPT_TURN_STALL, DEFAULT_TURN_STALL, OPT_PLAYBACK_DUCK, DEFAULT_PLAYBACK_DUCK, OPT_INSTRUCTIONS, OPT_LANGUAGE, OPT_MAX_SESSION, OPT_MIC_GAIN,
                     OPT_MODEL, OPT_VAD_EAGERNESS, OPT_VOICE, STREAM_PATH)
 from .device import VoicePE
 from .http import Stream, new_stream
@@ -43,6 +45,29 @@ TOOL_HA = {
         "command": {"type": "string", "description": "команда или вопрос для умного дома, по-русски"}},
         "required": ["command"]},
 }
+
+
+def _stem_pattern(word: str) -> str:
+    """Regex matching Russian declensions of `word`: keep the first len-2 letters (min 3), allow any tail."""
+    w = word.lower().replace("ё", "е")
+    keep = max(3, len(w) - 2) if len(w) > 3 else len(w)
+    return re.escape(w[:keep]) + r"[\w-]*"
+
+
+def normalize_areas(command: str, area_names: list[str]) -> str:
+    """«включи свет на кухне» → «включи свет на Кухня».
+
+    HA's Russian intents match area names literally (`[в|на] {area}`), without morphology, so a
+    declined form never hits the area. Replace any declined form of a known area with its exact
+    name (longest names first so «Задний двор» wins over «Двор»)."""
+    out = command.replace("ё", "е")
+    for name in sorted(area_names, key=len, reverse=True):
+        words = name.split()
+        if not words:
+            continue
+        pat = r"\b" + r"\s+".join(_stem_pattern(w) for w in words) + r"\b"
+        out = re.sub(pat, name, out, flags=re.IGNORECASE)
+    return out
 
 
 def _quote_in(quote: str, text: str) -> bool:
@@ -94,8 +119,11 @@ class Session:
             data = data2          # channel 1: no AGC → the device's own voice is ~40 dB down
         if time.monotonic() < self.mute_until:
             data = bytes(len(data))   # the AEC leaks the first ~0.7 s of a new announcement
-        if self.b.mic_gain != 1.0:
-            x = np.frombuffer(data, dtype=np.int16).astype(np.float32) * self.b.mic_gain
+        gain = self.b.mic_gain
+        if self.b.dev.playing:
+            gain *= self.b.playback_duck   # residual echo of the device's own voice stays under the VAD
+        if gain != 1.0:
+            x = np.frombuffer(data, dtype=np.int16).astype(np.float32) * gain
             data = np.clip(x, -32768, 32767).astype(np.int16).tobytes()
         pcm24 = resample_16k_to_24k(data, self.rs_state)
         if self.oai is None or not self.oai.ready.is_set():
@@ -207,6 +235,11 @@ class Session:
         """Hand the phrase to a HA conversation agent (built-in intents or any other agent)."""
         if not command:
             return {"error": "empty command"}
+        areas = [a.name for a in ar.async_get(self.b.hass).async_list_areas() if a.name]
+        normalized = normalize_areas(command, areas)
+        if normalized != command:
+            log.info("area names normalized: %r → %r", command, normalized)
+            command = normalized
         data = {"text": command, "language": self.b.language, "agent_id": self.b.command_agent}
         if self.ha_conversation_id:
             data["conversation_id"] = self.ha_conversation_id
@@ -253,6 +286,7 @@ class RtBridge:
         self.ha_tool = bool(o.get(OPT_HA_TOOL, True))
         self.echo_guard = float(o.get(OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD))
         self.turn_stall = float(o.get(OPT_TURN_STALL, DEFAULT_TURN_STALL))
+        self.playback_duck = float(o.get(OPT_PLAYBACK_DUCK, DEFAULT_PLAYBACK_DUCK))
         self.base_url = (o.get(OPT_AUDIO_BASE_URL) or get_url(hass, allow_external=False, allow_cloud=False,
                                                                 allow_ip=True, require_ssl=False)).rstrip("/")
         self.dev: VoicePE | None = None
