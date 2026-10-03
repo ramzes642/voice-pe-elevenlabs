@@ -107,7 +107,12 @@ Goal: «солнце моё» → live full-duplex conversation through the ко
 - [ ] Known: words spoken while the wake chime is still playing (~0.8 s after the wake word) are often
       lost or garbled (chime + AEC residual). Speak after the chime, or turn off the device's «Wake sound»
       switch. Mic ducking applies only during the agent's own playback for that reason
-- [ ] Residual: rare device reboot at session end — lwIP select/semaphore assert in tcp_input (not in
+- [x] Persona moved to the options (tool rules appended from code; a stale full prompt saved by the form is
+      ignored); «end after action» option: command → «Готово» → session ends once the confirmation played,
+      unless a real transcript arrived meanwhile; idle timeout = 5 s of real silence (not user speech,
+      not a response/tool in flight, not playback). Custom wake chime siri-start.mp3 (fw v20)
+- [ ] Residual: rare device reboot at session end (lwIP select assert; heap corruption at next
+      allocate_buffers_) — 2 in ~40 sessions, both after idle-timeout ends — lwIP select/semaphore assert in tcp_input (not in
       our code; device recovers in ~10 s and the bridge reconnects). Investigate if it becomes frequent
 - [ ] Tune first-response latency (semantic VAD eagerness), persona, wolt as a tool
 - [ ] Fallback to HA when rtbridge is down (patched fw keeps no fallback pointer — HA gets the

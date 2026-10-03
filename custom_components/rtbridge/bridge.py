@@ -216,6 +216,7 @@ class Session:
         self.ha_conversation_id: str | None = None
         self.pending_end: str | None = None   # end the session once the confirmation has played
         self.pending_end_at = 0.0
+        self.pending_end_audio_at = 0.0
         self.last_user_text_at = 0.0
         self.mic_chunks = 0
         self.mute_until = 0.0     # echo guard: ignore the mic for the first moments of each announcement
@@ -303,6 +304,8 @@ class Session:
 
         def on_audio(pcm: bytes):
             if self.stream is None or self.stream.closed:
+                if self.pending_end and not self.pending_end_audio_at:
+                    self.pending_end_audio_at = time.monotonic()   # the confirmation starts playing
                 self.stream = new_stream(hass, OAI_RATE)
                 dev.agent_speaking(agent_text["cur"] or "…")
                 dev.play_url(self.b.base_url + STREAM_PATH.format(sid=self.stream.id))
@@ -386,6 +389,7 @@ class Session:
             if self.b.end_after_action and isinstance(res, dict) and res.get("ok") and res.get("response_type", "action_done") == "action_done":
                 self.pending_end = f"action done ({name})"
                 self.pending_end_at = time.monotonic()
+                self.pending_end_audio_at = 0.0
                 asyncio.get_running_loop().create_task(self._end_after_confirmation())
             return res
         return {"error": f"unknown tool {name}", "_no_response": True}
@@ -651,7 +655,10 @@ class Session:
         await asyncio.sleep(0.3)
         # Keep the session only if the user really said something after the command (a non-empty
         # transcript) or is talking right now; a VAD blip from the echo of «Готово» does not count.
-        if self.pending_end is None or self.ending or self.oai.in_speech or self.last_user_text_at > self.pending_end_at:
+        # The command's own transcript arrives after the tool call — only text that came in after the
+        # confirmation started playing means the user went on talking.
+        baseline = (self.pending_end_audio_at or self.pending_end_at) + 0.3
+        if self.pending_end is None or self.ending or self.oai.in_speech or self.last_user_text_at > baseline:
             log.info("end-after-action skipped: user continued")
             self.pending_end = None
             return
