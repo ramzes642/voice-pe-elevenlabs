@@ -194,20 +194,37 @@ def _quote_in(quote: str, text: str) -> bool:
     return any(w.strip(",.!?") in t for w in quote.lower().replace("ё", "е").split() if len(w.strip(",.!?")) > 2)
 
 
+def _fir_lowpass(taps: int, cutoff: float) -> np.ndarray:
+    """Windowed-sinc low-pass; cutoff relative to the sample rate (0.5 = Nyquist)."""
+    n = np.arange(taps) - (taps - 1) / 2
+    h = 2 * cutoff * np.sinc(2 * cutoff * n)
+    h *= np.hamming(taps)
+    return (h / h.sum()).astype(np.float32)
+
+
+_UP, _DOWN = 3, 2                       # 16 kHz → 48 kHz → 24 kHz
+_FIR = _fir_lowpass(60, 0.5 / _UP * 0.92) * _UP   # cutoff just under 8 kHz at 48 kHz; x3 restores level
+
+
 def resample_16k_to_24k(pcm: bytes, state: dict) -> bytes:
+    """s16le 16 kHz → 24 kHz, polyphase-style: zero-stuff x3, FIR low-pass, take every 2nd sample.
+    Continuous across chunks (FIR history and decimation phase are kept in `state`). Linear
+    interpolation left imaging artefacts that cost the model intelligibility on marginal audio."""
     x = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
     if len(x) == 0:
         return b""
-    prev = state.get("prev")
-    if prev is not None:
-        x = np.concatenate([[prev], x])
-    state["prev"] = x[-1]
-    n_out = int(np.floor((len(x) - 1) * 1.5))
-    pos = np.arange(n_out) * (2.0 / 3.0)
-    i = np.clip(np.floor(pos).astype(np.int64), 0, len(x) - 2)
-    frac = (pos - i).astype(np.float32)
-    y = x[i] * (1 - frac) + x[i + 1] * frac
-    return np.clip(y, -32768, 32767).astype(np.int16).tobytes()
+    up = np.zeros(len(x) * _UP, dtype=np.float32)
+    up[::_UP] = x
+    hist = state.get("hist")
+    if hist is None:
+        hist = np.zeros(len(_FIR) - 1, dtype=np.float32)
+    sig = np.concatenate([hist, up])
+    y = np.convolve(sig, _FIR, mode="valid")          # len == len(up)
+    state["hist"] = sig[-(len(_FIR) - 1):]
+    phase = state.get("phase", 0)
+    out = y[phase::_DOWN]
+    state["phase"] = (phase - len(y)) % _DOWN
+    return np.clip(out, -32768, 32767).astype(np.int16).tobytes()
 
 
 class Session:
@@ -226,6 +243,8 @@ class Session:
         self.pending_end_at = 0.0
         self.pending_end_audio_at = 0.0
         self.last_user_text_at = 0.0
+        self.last_agent_text = ""
+        self.stream_is_echo_reply = False
         self.agc_env = 8000.0            # ch0 (XMOS AGC) speech sits around 0.25-0.9 FS; start near x2
         self.agc_gain = self.b.mic_gain
         self.rec = None
@@ -390,8 +409,22 @@ class Session:
             dev.stop_playback()
             dev.user_speaking()
 
+        def _words(x: str) -> set[str]:
+            return {w for w in re.sub(r"[^\w ]+", " ", x.lower().replace("ё", "е")).split() if len(w) > 1}
+
         def on_user(t: str):
             log.info("USER:  %s", t); self.user_text.append(t)
+            # Echo guard: the device's own last sentence coming back through the mic is transcribed as
+            # the user («Готово.»). If every word is from the agent's last utterance, it is echo.
+            tw = _words(t)
+            if tw and tw <= _words(self.last_agent_text) | {"готово", "готова", "ок", "да"}:
+                log.info("echo of the agent's own speech ignored: %r", t)
+                self.user_text.pop()
+                if self.oai is not None:
+                    asyncio.get_running_loop().create_task(self.oai.cancel_response())
+                    if self.stream and not self.stream.closed and self.stream_is_echo_reply:
+                        self.stream.close(discard=True)
+                return
             if t.strip():
                 self.last_user_text_at = time.monotonic()
             elif self.oai is not None:
@@ -404,6 +437,7 @@ class Session:
 
         def on_agent(t: str):
             log.info("AGENT: %s", t); agent_text["cur"] = ""
+            self.last_agent_text = t
 
         tools = [TOOL_END]
         if self.b.ha_tool:
