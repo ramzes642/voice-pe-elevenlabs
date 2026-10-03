@@ -37,7 +37,8 @@
           "max_session": "Max session length (s)",
           "mic_gain": "Microphone gain (channel without AGC)",
           "audio_base_url": "Audio base URL override (http://HA-LAN-IP:8123)",
-          "echo_guard": "Mute mic for N s when the device starts speaking (echo guard)"
+          "echo_guard": "Mute mic for N s when the device starts speaking (echo guard)",
+          "turn_stall": "Force the turn if no answer N s after speech stops"
         }
       }
     }

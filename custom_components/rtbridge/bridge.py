@@ -14,7 +14,7 @@ from homeassistant.helpers.network import get_url
 from .const import (DEFAULT_COMMAND_AGENT, DEFAULT_IDLE_TIMEOUT, DEFAULT_INSTRUCTIONS, DEFAULT_LANGUAGE,
                     DEFAULT_MAX_SESSION, DEFAULT_MIC_GAIN, DEFAULT_MODEL, DEFAULT_VAD_EAGERNESS, DEFAULT_VOICE,
                     CONF_API_KEY, CONF_HOST, CONF_NOISE_PSK, OPT_AUDIO_BASE_URL, OPT_COMMAND_AGENT, OPT_GREETING,
-                    OPT_HA_TOOL, OPT_IDLE_TIMEOUT, OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD, DEFAULT_GREETING, OPT_INSTRUCTIONS, OPT_LANGUAGE, OPT_MAX_SESSION, OPT_MIC_GAIN,
+                    OPT_HA_TOOL, OPT_IDLE_TIMEOUT, OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD, DEFAULT_GREETING, OPT_TURN_STALL, DEFAULT_TURN_STALL, OPT_INSTRUCTIONS, OPT_LANGUAGE, OPT_MAX_SESSION, OPT_MIC_GAIN,
                     OPT_MODEL, OPT_VAD_EAGERNESS, OPT_VOICE, STREAM_PATH)
 from .device import VoicePE
 from .http import Stream, new_stream
@@ -124,10 +124,12 @@ class Session:
 
     async def _watchdog(self):
         while not self.ending:
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
             if time.monotonic() - self.t0 > self.b.max_session:
                 await self.end("max session length"); return
             if self.oai and self.oai.ready.is_set():
+                if self.oai.turn_stuck(self.b.turn_stall):
+                    await self.oai.force_turn()
                 if time.monotonic() - self.oai.last_activity > self.b.idle_timeout:
                     await self.end("idle"); return
                 if self.oai.closed.is_set():
@@ -250,6 +252,7 @@ class RtBridge:
         self.eagerness = o.get(OPT_VAD_EAGERNESS, DEFAULT_VAD_EAGERNESS)
         self.ha_tool = bool(o.get(OPT_HA_TOOL, True))
         self.echo_guard = float(o.get(OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD))
+        self.turn_stall = float(o.get(OPT_TURN_STALL, DEFAULT_TURN_STALL))
         self.base_url = (o.get(OPT_AUDIO_BASE_URL) or get_url(hass, allow_external=False, allow_cloud=False,
                                                                 allow_ip=True, require_ssl=False)).rstrip("/")
         self.dev: VoicePE | None = None

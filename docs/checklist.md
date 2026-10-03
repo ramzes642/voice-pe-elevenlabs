@@ -73,6 +73,8 @@ Goal: «солнце моё» → live full-duplex conversation through the ко
 - [x] fw v18 + HA restart verified: no crash on HA reconnect; «включи/выключи свет» → tool fires at once,
       «Готово, свет выключен» ~3 s after the user stops; farewell ends the session
 - [x] Greeting off by default (collided with users who speak right after the wake word), echo guard 0.5 s
+- [x] Stuck-turn watchdog: semantic VAD once stalled 10 s after a complete phrase; if no response
+      starts 2 s after speech_stopped the bridge commits the buffer and requests a response
 - [ ] Tune first-response latency (semantic VAD eagerness), persona, wolt as a tool
 - [ ] Fallback to HA when rtbridge is down (patched fw keeps no fallback pointer — HA gets the
       device back only on its next reconnect)

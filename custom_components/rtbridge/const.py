@@ -18,6 +18,7 @@ OPT_VAD_EAGERNESS = "vad_eagerness"
 OPT_AUDIO_BASE_URL = "audio_base_url"
 OPT_HA_TOOL = "ha_tool"
 OPT_ECHO_GUARD = "echo_guard"
+OPT_TURN_STALL = "turn_stall"
 
 DEFAULT_MODEL = "gpt-realtime-2.1"
 DEFAULT_VOICE = "marin"
@@ -28,7 +29,8 @@ DEFAULT_MAX_SESSION = 600
 DEFAULT_MIC_GAIN = 16.0
 DEFAULT_VAD_EAGERNESS = "auto"
 DEFAULT_ECHO_GUARD = 0.5   # seconds of mic muted after each announcement starts
-DEFAULT_GREETING = False   # a greeting right after the wake word collides with users who speak at once
+DEFAULT_GREETING = False
+DEFAULT_TURN_STALL = 2.0   # s after speech stopped with no response → force the turn   # a greeting right after the wake word collides with users who speak at once
 
 DEFAULT_INSTRUCTIONS = (
     "Ты — голосовой ассистент умной колонки «Солнце». Говори только по-русски, коротко и живо, "

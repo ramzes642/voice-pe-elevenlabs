@@ -41,6 +41,8 @@ class RealtimeSession:
         self.ready = asyncio.Event()
         self.closed = asyncio.Event()
         self.last_activity = time.monotonic()
+        self.speech_stopped_at: float | None = None   # for the stuck-turn watchdog
+        self.response_active = False
         self._task: asyncio.Task | None = None
 
     async def connect(self):
@@ -90,6 +92,18 @@ class RealtimeSession:
         if respond:
             await self.request_response()
 
+    def turn_stuck(self, after: float) -> bool:
+        """semantic_vad sometimes never ends a turn (seen: 10 s stall). True if speech stopped
+        `after` seconds ago and no response has started since."""
+        return (self.speech_stopped_at is not None and not self.response_active
+                and time.monotonic() - self.speech_stopped_at > after)
+
+    async def force_turn(self):
+        log.info("turn detection stalled — forcing commit + response")
+        self.speech_stopped_at = None
+        await self.send({"type": "input_audio_buffer.commit"})
+        await self.request_response()
+
     async def _recv(self):
         try:
             async for msg in self.ws:
@@ -102,16 +116,23 @@ class RealtimeSession:
                 if t == "response.output_audio.delta":
                     self.last_activity = time.monotonic()
                     self.on_audio(base64.b64decode(ev["delta"]))
+                elif t == "response.created":
+                    self.response_active = True
+                    self.speech_stopped_at = None
                 elif t in ("response.output_audio.done", "response.done"):
                     self.on_audio_done()
                     if t == "response.done":
+                        self.response_active = False
                         status = ev.get("response", {}).get("status")
                         if status not in ("completed", "cancelled"):
                             log.warning("response.done status=%s %s", status,
                                         json.dumps(ev.get("response", {}).get("status_details"), ensure_ascii=False))
                 elif t == "input_audio_buffer.speech_started":
                     self.last_activity = time.monotonic()
+                    self.speech_stopped_at = None
                     self.on_speech_started()
+                elif t == "input_audio_buffer.speech_stopped":
+                    self.speech_stopped_at = time.monotonic()
                 elif t == "response.output_audio_transcript.done":
                     if self.on_agent_transcript:
                         self.on_agent_transcript(ev.get("transcript", ""))
