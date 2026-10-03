@@ -12,6 +12,9 @@ from .http import StreamView
 
 log = logging.getLogger(__name__)
 VIEW_KEY = f"{DOMAIN}_view"
+# Conversation transcripts / tool calls are the useful trace of this integration: log them at INFO
+# even when HA's default level is WARNING (override with logger: custom_components.rtbridge: warning).
+logging.getLogger("custom_components.rtbridge").setLevel(logging.INFO)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

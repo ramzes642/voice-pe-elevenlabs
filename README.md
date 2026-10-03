@@ -80,7 +80,7 @@ git submodule update --init --recursive
 - 🟡 **HA integration** (`custom_components/rtbridge/`) — same bridge inside Home Assistant with a config
   flow (pick the ESPHome device, paste the OpenAI key) and an options flow (model, voice, persona, which
   conversation agent executes smart-home commands: built-in intents or hermes). Deployed with `make ha-deploy`,
-  awaiting an HA restart + first-run test.
+  **Running**: light commands verified by voice («включи свет в гостиной» → HA built-in agent, 30 ms).
 - 🟡 **Next** — latency tuning; wolt as a tool; decide whether the ElevenLabs path (`bridge/`) is still needed.
   See [`docs/checklist.md`](docs/checklist.md).
 

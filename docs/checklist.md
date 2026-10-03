@@ -61,7 +61,12 @@ Goal: «солнце моё» → live full-duplex conversation through the ко
       options (model/voice/persona/agent/timeouts/gain/eagerness), `home_assistant(command)` tool →
       `conversation.process` with the chosen agent (built-in intents or hermes). `make ha-deploy` done,
       imports verified inside the HA container
-- [ ] Restart HA, add the integration in the UI, stop the standalone systemd bridge, test «включи свет…»
+- [x] HA restarted, integration added from the UI (device picked from ESPHome entries, key from
+      <config>/rtbridge.env), standalone systemd bridge disabled. Verified by voice 2026-10-03:
+      «включи/выключи свет в гостиной» → built-in agent `action_done` in 30 ms → agent confirms;
+      «спасибо, пока» → end_conversation → device idle
+- [ ] Pending HA restart: echo guard (mute mic 0.8 s at announcement start), no filler before tool
+      calls, farewell guard waits for the transcript, translation fix
 - [ ] Tune first-response latency (semantic VAD eagerness, greeting), persona
 - [ ] Fallback to HA when rtbridge is down (patched fw keeps no fallback pointer — HA gets the
       device back only on its next reconnect)

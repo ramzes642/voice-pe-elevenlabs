@@ -14,7 +14,7 @@ from homeassistant.helpers.network import get_url
 from .const import (DEFAULT_COMMAND_AGENT, DEFAULT_IDLE_TIMEOUT, DEFAULT_INSTRUCTIONS, DEFAULT_LANGUAGE,
                     DEFAULT_MAX_SESSION, DEFAULT_MIC_GAIN, DEFAULT_MODEL, DEFAULT_VAD_EAGERNESS, DEFAULT_VOICE,
                     CONF_API_KEY, CONF_HOST, CONF_NOISE_PSK, OPT_AUDIO_BASE_URL, OPT_COMMAND_AGENT, OPT_GREETING,
-                    OPT_HA_TOOL, OPT_IDLE_TIMEOUT, OPT_INSTRUCTIONS, OPT_LANGUAGE, OPT_MAX_SESSION, OPT_MIC_GAIN,
+                    OPT_HA_TOOL, OPT_IDLE_TIMEOUT, OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD, OPT_INSTRUCTIONS, OPT_LANGUAGE, OPT_MAX_SESSION, OPT_MIC_GAIN,
                     OPT_MODEL, OPT_VAD_EAGERNESS, OPT_VOICE, STREAM_PATH)
 from .device import VoicePE
 from .http import Stream, new_stream
@@ -43,6 +43,12 @@ TOOL_HA = {
         "command": {"type": "string", "description": "команда или вопрос для умного дома, по-русски"}},
         "required": ["command"]},
 }
+
+
+def _quote_in(quote: str, text: str) -> bool:
+    """True if a meaningful word of the quoted farewell appears in the transcript text."""
+    t = text.lower().replace("ё", "е")
+    return any(w.strip(",.!?") in t for w in quote.lower().replace("ё", "е").split() if len(w.strip(",.!?")) > 2)
 
 
 def resample_16k_to_24k(pcm: bytes, state: dict) -> bytes:
@@ -74,6 +80,7 @@ class Session:
         self.user_text: list[str] = []
         self.ha_conversation_id: str | None = None
         self.mic_chunks = 0
+        self.mute_until = 0.0     # echo guard: ignore the mic for the first moments of each announcement
         self._tasks: list[asyncio.Task] = []
 
     async def start(self):
@@ -85,6 +92,8 @@ class Session:
         self.mic_chunks += 1
         if data2:
             data = data2          # channel 1: no AGC → the device's own voice is ~40 dB down
+        if time.monotonic() < self.mute_until:
+            data = bytes(len(data))   # the AEC leaks the first ~0.7 s of a new announcement
         if self.b.mic_gain != 1.0:
             x = np.frombuffer(data, dtype=np.int16).astype(np.float32) * self.b.mic_gain
             data = np.clip(x, -32768, 32767).astype(np.int16).tobytes()
@@ -133,6 +142,7 @@ class Session:
                 self.stream = new_stream(hass, OAI_RATE)
                 dev.agent_speaking(agent_text["cur"] or "…")
                 dev.play_url(self.b.base_url + STREAM_PATH.format(sid=self.stream.id))
+                self.mute_until = time.monotonic() + self.b.echo_guard
             self.stream.push(pcm)
 
         def on_audio_done():
@@ -174,8 +184,14 @@ class Session:
     async def _tool(self, name: str, call_id: str, args: dict):
         if name == "end_conversation":
             quote = (args.get("quote") or "").strip()
+            # The transcript of the farewell usually lands *after* the tool call: give it up to 3 s.
+            n = len(self.user_text)
+            for _ in range(30):
+                if len(self.user_text) > n or (self.user_text and _quote_in(quote, self.user_text[-1])):
+                    break
+                await asyncio.sleep(0.1)
             heard = " ".join(self.user_text[-3:]).lower()
-            if len(quote) < 3 or not any(w in heard for w in quote.lower().split() if len(w) > 2):
+            if len(quote) < 3 or not _quote_in(quote, heard):
                 log.warning("end_conversation refused: quote=%r, recent=%r", quote, heard)
                 return {"ok": False, "error": "пользователь не прощался — продолжай разговор", "_no_response": True}
             log.info("agent ends the conversation: %r", quote)
@@ -233,6 +249,7 @@ class RtBridge:
         self.mic_gain = float(o.get(OPT_MIC_GAIN, DEFAULT_MIC_GAIN))
         self.eagerness = o.get(OPT_VAD_EAGERNESS, DEFAULT_VAD_EAGERNESS)
         self.ha_tool = bool(o.get(OPT_HA_TOOL, True))
+        self.echo_guard = float(o.get(OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD))
         self.base_url = (o.get(OPT_AUDIO_BASE_URL) or get_url(hass, allow_external=False, allow_cloud=False,
                                                                 allow_ip=True, require_ssl=False)).rstrip("/")
         self.dev: VoicePE | None = None

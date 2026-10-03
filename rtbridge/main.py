@@ -72,6 +72,7 @@ class Session:
         self.wake_word = wake_word
         self.t0 = time.monotonic()
         self.mic_chunks = 0
+        self.mute_until = 0.0
         self.mic_bytes = 0
         self.ending = False
         self.done = asyncio.Event()
@@ -106,6 +107,8 @@ class Session:
             self.rec.writeframes(np.column_stack([a, b]).tobytes())
         if MIC_CHANNEL == 1 and data2:
             data = data2
+        if time.monotonic() < self.mute_until:
+            data = bytes(len(data))   # echo guard: AEC leaks the first ~0.7 s of a new announcement
         if MIC_GAIN != 1.0:
             x = np.frombuffer(data, dtype=np.int16).astype(np.float32) * MIC_GAIN
             data = np.clip(x, -32768, 32767).astype(np.int16).tobytes()
@@ -186,6 +189,7 @@ class Session:
                 self.stream, url = http.new_stream(OAI_RATE)
                 dev.agent_speaking(agent_text["cur"] or "…")
                 dev.play_url(url)
+                self.mute_until = time.monotonic() + float(os.environ.get("RTBRIDGE_ECHO_GUARD", "0.8"))
                 log.info("agent audio → %s", url)
             self.stream.push(pcm)
 
