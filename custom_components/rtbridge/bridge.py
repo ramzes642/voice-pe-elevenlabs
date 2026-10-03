@@ -164,7 +164,9 @@ class Session:
         if time.monotonic() < self.mute_until:
             data = bytes(len(data))   # the AEC leaks the first ~0.7 s of a new announcement
         gain = self.b.mic_gain
-        if self.b.dev.recently_playing(0.8):
+        # Duck only while *our* response audio is (or just was) playing — the device's wake sound at
+        # session start is also an announcement and must not mute the user's first words.
+        if self.stream is not None and self.b.dev.recently_playing(0.8):
             gain *= self.b.playback_duck   # residual echo of the device's own voice stays under the VAD
         if gain != 1.0:
             x = np.frombuffer(data, dtype=np.int16).astype(np.float32) * gain
