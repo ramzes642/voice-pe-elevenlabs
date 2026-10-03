@@ -313,7 +313,7 @@ class Session:
         peak = float(np.abs(x).max())
         if peak > 25:                                   # above the ch1 noise floor
             self.agc_env = peak if peak > self.agc_env else self.agc_env * 0.99 + peak * 0.01
-        target = 0.5 * 32767
+        target = 0.85 * 32767               # OpenAI's VAD ignored speech with peaks ~0.5 (rms ~0.1)
         self.agc_gain = max(self.b.agc_min, min(self.b.agc_max, target / max(self.agc_env, 1.0)))
         return np.clip(x * self.agc_gain, -32768, 32767).astype(np.int16).tobytes()
 
@@ -483,7 +483,13 @@ class Session:
                     break
                 await asyncio.sleep(0.1)
             heard = " ".join(self.user_text[-3:]).lower()
-            if len(quote) < 3 or not _quote_in(quote, heard):
+            farewell_words = ("пока", "свидан", "хватит", "отбой", "спасибо", "всё", "все", "замолч", "стоп")
+            # Accept if the quoted words were transcribed, OR the quote is a clear farewell and the user
+            # really said something in the last 6 s (the transcriber mangled «Всё, пока» into «Чопан»);
+            # hallucinated farewells come on empty/echo transcripts, which do not count as user text.
+            said_recently = time.monotonic() - self.last_user_text_at < 6.0
+            plausible = any(w in quote.lower().replace("ё", "е") for w in farewell_words) and said_recently
+            if len(quote) < 3 or not (_quote_in(quote, heard) or plausible):
                 log.warning("end_conversation refused: quote=%r, recent=%r", quote, heard)
                 return {"ok": False, "error": "пользователь не прощался — продолжай разговор", "_no_response": True}
             log.info("agent ends the conversation: %r", quote)
@@ -796,7 +802,7 @@ class RtBridge:
         self.instructions = persona + "\n\n" + TOOL_RULES
         self.end_after_action = bool(o.get(OPT_END_AFTER_ACTION, DEFAULT_END_AFTER_ACTION))
         self.agc = bool(o.get(OPT_AGC, DEFAULT_AGC))
-        self.agc_min, self.agc_max = 1.0, 8.0
+        self.agc_min, self.agc_max = 1.0, 12.0
         self.agc_level = int(o.get(OPT_AGC_LEVEL, DEFAULT_AGC_LEVEL))
         self.ns_level = int(o.get(OPT_NS_LEVEL, DEFAULT_NS_LEVEL))
         self.record = bool(o.get(OPT_RECORD, DEFAULT_RECORD))

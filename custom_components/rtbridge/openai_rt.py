@@ -55,7 +55,7 @@ class RealtimeSession:
             "output_modalities": ["audio"],
             "audio": {
                 "input": {"format": {"type": "audio/pcm", "rate": RATE},
-                          "turn_detection": ({"type": "server_vad", "threshold": 0.4, "prefix_padding_ms": 300,
+                          "turn_detection": ({"type": "server_vad", "threshold": 0.3, "prefix_padding_ms": 400,
                                               "silence_duration_ms": 900, "create_response": True,
                                               "interrupt_response": True} if self.eagerness == "server" else
                                              {"type": "semantic_vad", "eagerness": self.eagerness,
