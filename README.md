@@ -49,7 +49,8 @@ audio formats and open questions.
 |---|---|---|
 | (this repo) | Umbrella: docs, the `el_bridge` HA integration, test tooling, checklist | ours |
 | `bridge/` | `el_bridge`: Phase 1 probe (`probe.py`) today, HA custom integration later | ours |
-| `hwtest/` | Laptop-side harness for the **real** Voice PE: plays wake word + command, records the answer, aligns with the device's USB log, local whisper timeline. Plus an OpenAI Realtime client | ours |
+| `rtbridge/` | **Realtime bridge** on the Pi: Voice PE native API (mic in, media player out) ⇄ OpenAI Realtime. The thing that makes the колонка talk today | ours |
+| `hwtest/` | Laptop-side harness for the **real** Voice PE: plays wake word + phrases, records the answer, aligns with the device's USB log, local whisper timeline (`ping_pong.py`, `dialog.py`) | ours |
 | `sun-wakeword/` | Russian wake word **«солнце моё»** for `micro_wake_word`: training pipeline, trained models, the firmware YAML currently flashed | ours |
 | `hermes-assist-bridge/` | The current **turn-based** brain (HA Assist → hermes-agent) + install docs — reference/fallback | ours |
 | `Makefile` | `make flash`: build the firmware on the Raspberry Pi (ESPHome docker) and OTA it to the колонка | ours |
@@ -70,11 +71,13 @@ git submodule update --init --recursive
 
 - ✅ **Phase 0 / 1** — scaffolding; ElevenLabs Agent validated from a laptop: `pcm_16000` in/out,
   Russian STT/TTS, `client_tool_call` round-trip, ≈0.28 s end-of-speech → first audio.
-- ✅ **Device on the bench** — the колонка runs the stock pipeline with the «солнце моё» wake word
-  (firmware v14/v15, `sun-wakeword/`) and hermes as the brain. `hwtest/ping_pong.py` drives it
-  acoustically from the laptop and passes: wake +1.4 s, STT +3.2 s, answer +5.2 s after the command.
-- 🟡 **Next: Phase 2 / 3** — `el_bridge` as a HA integration and the `el_agent` firmware component.
-  See [`docs/checklist.md`](docs/checklist.md).
+- ✅ **Live full-duplex dialog on the real колонка** (`rtbridge/`, 2026-10-03) — «солнце моё» →
+  conversation with **OpenAI Realtime** (`gpt-realtime-2.1`) through the device: answers start
+  ~2 s after you stop talking, you can interrupt mid-sentence, «спасибо, пока» ends the session.
+  Runs as a systemd service on the Raspberry Pi; HA stays connected but is not in the loop.
+  Firmware v17 = stock + patched `voice_assistant` subscription + WAV codec (`make flash`).
+- 🟡 **Next** — tools (HA actions, wolt) as Realtime function calls; latency tuning; decide whether
+  the ElevenLabs path (`bridge/`, Phase 2/3) is still needed. See [`docs/checklist.md`](docs/checklist.md).
 
 ## Working with the real device
 
@@ -83,9 +86,16 @@ exposes its ESPHome log on `/dev/cu.usbmodem*`. Home Assistant and the ESPHome b
 Raspberry Pi (`rpi` in `~/.ssh/config`).
 
 ```bash
-make flash      # sync YAML + wake-word model to the Pi → compile in docker → OTA → bins to sun-wakeword/firmware/v<date>/
-make logs       # live ESPHome log over USB
-make test       # hwtest/ping_pong.py: «Солнце моё» … «Это пинг, ответь понг» → per-second timeline + verdict
+make flash            # sync YAML + patched components + wake-word model → compile in docker → OTA → bins
+make logs             # live ESPHome log over USB
+make test             # hwtest/ping_pong.py: «Солнце моё» … «Это пинг, ответь понг» → per-second timeline + verdict
+make bridge-deploy    # rsync rtbridge/ to the Pi + venv;  make bridge-restart / bridge-logs / bridge-stop
+```
+
+Scripted conversation from the laptop (phrase, seconds to wait, phrase, …):
+
+```bash
+cd hwtest && .venv/bin/python dialog.py "Солнце моё" 1.5 "Привет! Почему небо голубое?" 6 "Спасибо, пока!" 8
 ```
 
 `hwtest/` needs its own venv (`cd hwtest && uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements.txt`);

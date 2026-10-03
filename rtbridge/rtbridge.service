@@ -1,0 +1,18 @@
+[Unit]
+Description=rtbridge — Voice PE ⇄ OpenAI Realtime full-duplex bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ramzes
+WorkingDirectory=/home/ramzes/rtbridge
+Environment=RTBRIDGE_MODE=openai
+EnvironmentFile=-/home/ramzes/rtbridge/rtbridge/.env
+ExecStart=/home/ramzes/rtbridge/.venv/bin/python -m rtbridge.main --mode ${RTBRIDGE_MODE} --record-dir /home/ramzes/rtbridge/rec
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

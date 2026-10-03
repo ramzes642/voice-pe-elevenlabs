@@ -35,12 +35,31 @@ auth via `xi-api-key` header; events `conversation_initiation_metadata` (carries
 - [x] `ping_pong.py`: laptop says «Солнце моё» + command, records mic, captures ESPHome log over
       USB, local whisper per-second timeline, PASS/FAIL verdict (validated 2026-10-03: wake +1.4s,
       STT +2.8s, answer +4.3s after command on stock fw v14 + hermes bridge)
-- [x] `realtime_openai.py`: OpenAI Realtime session (pcm16 24k, server VAD, barge-in) — written,
-      not yet exercised with a key
+- [x] `realtime_openai.py`: OpenAI Realtime session (laptop mic/speakers); `dialog.py`: scripted multi-turn
+      acoustic test (phrase, wait, phrase, …) with per-second timeline
 - [ ] Stage 2 driver: OpenAI Realtime model plays the human (multi-turn, judges answers)
 - [x] Root `Makefile`: `make flash` = sync YAML+model → compile on the Pi (ESPHome docker) → OTA → artifacts;
       `make flash-usb` (esptool over the USB cable), `make logs`, `make test`
 - [ ] Re-run `ping_pong.py` against el_agent firmware once Phase 3 exists; compare timings
+
+## Realtime dialog on the real device (`rtbridge/`, 2026-10-03)  ✅ WORKING
+Goal: «солнце моё» → live full-duplex conversation through the колонка, no HA in the loop.
+- [x] Stock-firmware path found: device streams mic over the native API for as long as no
+      STT_END/RUN_END arrives; responses play via media_player announcement (HTTP) → full duplex
+- [x] Firmware: patched `voice_assistant` (later API subscriber takes over, `rtbridge*` cannot be
+      displaced), announcement pipeline `format: NONE` (WAV codec) → fw v17 (`make flash`)
+- [x] `rtbridge` service on the Pi (systemd, enabled): aioesphomeapi VA server + chunked-WAV HTTP +
+      OpenAI Realtime WS (gpt-realtime-2.1, semantic VAD, far-field NR). Mic = ch1 (no AGC, no echo) x16
+- [x] Stage 1 loopback (echo of the mic through the device while mic keeps streaming) — verified
+- [x] Stage 2 live dialog: answer starts ~1.6–2.1 s after end of question; 14 s answer plays fully
+- [x] Barge-in: playback cut ~1.1 s after the user starts talking; new question answered
+- [x] `end_conversation` tool (needs the user's quoted farewell, bridge verifies it) → goodbye →
+      RUN_END → device idle. Device-side «stop» / wake word also end the session. Idle timeout 25 s
+- [x] Device crash on STOP-right-after-start (double free in decoder task) avoided: HTTP stream paced
+      to real time (+0.6 s lead), STOP only for announcements older than 1.5 s
+- [ ] Tune first-response latency (semantic VAD eagerness, greeting), persona, HA tools via client tools
+- [ ] Fallback to HA when rtbridge is down (patched fw keeps no fallback pointer — HA gets the
+      device back only on its next reconnect)
 
 ## Phase 2 — Bridge as a Home Assistant integration
 - [ ] Port the prototype into a HA custom integration `el_bridge`

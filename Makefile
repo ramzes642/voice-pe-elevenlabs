@@ -25,7 +25,7 @@ RPI_BUILD   := $(RPI_DIR)/.esphome/build/home-assistant-voice/.pioenvs/home-assi
 DOCKER      := sudo docker run --rm --network host -v $(RPI_DIR):/config -v $(RPI_DIR)/.esphome:/cache $(ESPHOME_IMG)
 OUT         := $(FW_DIR)/v$(V)
 
-.PHONY: help sync build upload flash artifacts flash-usb logs test clean-build
+.PHONY: help sync build upload flash artifacts flash-usb logs test clean-build bridge-deploy bridge-install bridge-restart bridge-stop bridge-logs bridge-loopback
 
 help:
 	@sed -n '2,12p' $(MAKEFILE_LIST)
@@ -37,6 +37,8 @@ sync:
 	  && cd /tmp && sudo cp $(MODEL_FILES) $(RPI_DIR)/wake_words/sun/ \
 	  && md5sum $(RPI_DIR)/$(FW_YAML) $(RPI_DIR)/wake_words/sun/sun.tflite'
 	@md5 -q $(FW_DIR)/$(FW_YAML) $(FW_DIR)/sun.tflite | sed 's/^/local  /'
+	rsync -a --delete $(FW_DIR)/components/ $(RPI):/tmp/fw_components/
+	ssh $(RPI) 'sudo rsync -a --delete /tmp/fw_components/ $(RPI_DIR)/components/'
 
 ## build: compile on the Pi (first build downloads the IDF toolchain, tens of minutes; later ones take minutes)
 build: sync
@@ -74,3 +76,29 @@ test:
 ## clean-build: wipe the Pi's build dir for this node (forces a full rebuild)
 clean-build:
 	ssh $(RPI) 'sudo rm -rf $(RPI_DIR)/.esphome/build/home-assistant-voice'
+
+# ---- rtbridge (runs on the Pi) ----------------------------------------------------------
+BRIDGE_DIR ?= /home/ramzes/rtbridge
+
+## bridge-deploy: rsync rtbridge/ to the Pi, create venv, install deps (idempotent)
+bridge-deploy:
+	ssh $(RPI) 'mkdir -p $(BRIDGE_DIR)/rtbridge'
+	rsync -a --delete --exclude .env --exclude __pycache__ rtbridge/ $(RPI):$(BRIDGE_DIR)/rtbridge/
+	ssh $(RPI) 'cd $(BRIDGE_DIR) && test -x .venv/bin/python || python3 -m venv .venv; .venv/bin/pip -q install -r rtbridge/requirements.txt'
+
+## bridge-install: install + enable the systemd unit (then: make bridge-restart)
+bridge-install: bridge-deploy
+	ssh $(RPI) 'sudo cp $(BRIDGE_DIR)/rtbridge/rtbridge.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable rtbridge'
+
+bridge-restart:
+	ssh $(RPI) 'sudo systemctl restart rtbridge && sleep 1 && systemctl --no-pager -l status rtbridge | head -12'
+
+bridge-stop:
+	ssh $(RPI) 'sudo systemctl stop rtbridge'
+
+bridge-logs:
+	ssh $(RPI) 'journalctl -u rtbridge -f -n 50'
+
+## bridge-loopback: stage-1 check, runs in the foreground on the Pi (stop the service first)
+bridge-loopback:
+	ssh -t $(RPI) 'cd $(BRIDGE_DIR) && .venv/bin/python -m rtbridge.main --mode loopback --record-dir rec'

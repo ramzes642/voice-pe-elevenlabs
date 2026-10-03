@@ -28,7 +28,11 @@ docs/
   architecture.md          detailed flow, ports, audio formats, tool handling
   hardware.md              Voice PE / XMOS XU316 facts (verified from firmware source)
   checklist.md             phased task list — keep it updated
-bridge/                    el_bridge: standalone prototype first, then HA integration
+bridge/                    el_bridge: ElevenLabs Phase-1 probe (HA integration not started)
+rtbridge/                  realtime bridge on the Pi: Voice PE ⇄ OpenAI Realtime (WORKING, systemd)
+hwtest/                    laptop-side acoustic tests of the real device (ping_pong.py, dialog.py)
+sun-wakeword/              «солнце моё» wake word: training + firmware YAML + patched components
+Makefile                   make flash / make bridge-deploy / make test
 external/
   home-assistant-voice-pe/ fork (submodule) — firmware + el_agent component
   voice-kit-xmos-firmware/ fork (submodule) — XMOS DSP/AEC reference
@@ -65,6 +69,14 @@ external/
 
 ## Where to start
 
-Current phase: **Phase 1** in `docs/checklist.md` — standalone `el_bridge` prototype
-against the ElevenLabs Agent WebSocket (no hardware). Validate audio format, tool
-protocol, Russian. This de-risks ElevenLabs before any firmware work.
+Current state (2026-10-03): the колонка already holds live full-duplex conversations via
+`rtbridge/` (OpenAI Realtime) on **stock firmware + two small patches** (see
+`rtbridge/README.md`): no custom `el_agent` component was needed. Firmware builds on the
+Pi with `make flash`; the bridge deploys with `make bridge-deploy`; test from the laptop
+with `hwtest/dialog.py`. The firmware/HA facts above still hold; the ElevenLabs path
+(`bridge/`, Phases 2–3) is on hold. Next work: tools (HA actions, wolt) as Realtime
+function calls, latency tuning. Keep `docs/checklist.md` in sync.
+
+Operational rules for the device: never send `TTS_END` / `STT_VAD_END` / `STT_END` to the
+device mid-session (mic stops); never STOP an announcement younger than ~1.5 s (device
+decoder crash); the HTTP audio stream is paced to real time for that reason.

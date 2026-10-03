@@ -1,0 +1,5 @@
+aioesphomeapi>=46
+aiohttp>=3.10
+websockets>=14
+numpy>=2
+python-dotenv>=1.0
