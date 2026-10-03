@@ -95,7 +95,7 @@ class RealtimeSession:
             "output_modalities": ["audio"],
             "audio": {
                 "input": {"format": {"type": "audio/pcm", "rate": RATE}, "turn_detection": self.vad,
-                          "noise_reduction": {"type": "far_field"},
+                          # no noise_reduction: OpenAI's far_field filter garbles clean XMOS audio
                           "transcription": {"model": "gpt-4o-mini-transcribe", "language": "ru"}},
                 "output": {"format": {"type": "audio/pcm", "rate": RATE}, "voice": self.voice},
             },

@@ -48,7 +48,7 @@ mid-session — it would switch the device to `STREAMING_RESPONSE` and silence t
 | mic channel | `RTBRIDGE_MIC_CHANNEL=1` (data2, no AGC) | ch0 (AGC) carries the device's own voice at −10 dB → false barge-ins; ch1 has it at −50 dB |
 | mic gain | `RTBRIDGE_MIC_GAIN=16` | ch1 speech peaks at 0.03 FS; the model's VAD truncated phrases |
 | turn detection | `RTBRIDGE_VAD=semantic` (eagerness auto) | server_vad at 0.7 s silence split «Привет! …» into two turns |
-| noise reduction | `far_field` (session.audio.input.noise_reduction) | residual echo + room |
+| noise reduction | none — OpenAI's `far_field` filter cut turns short and garbled clean speech; the XMOS does NS/AEC | |
 | stream pacing | `RTBRIDGE_STREAM_LEAD=0.6` s | device buffers only 0.6 s ahead → closing the stream ≈ stop |
 | STOP policy | only if announcement ≥1.5 s old | STOP right after start crashed the device (double free) |
 | end tool | `end_conversation(quote)` verified against transcript | model hallucinated a farewell on an empty turn |

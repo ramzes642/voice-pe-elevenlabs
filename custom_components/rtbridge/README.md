@@ -33,7 +33,13 @@ Needs firmware with the patched `voice_assistant` + `api` + WAV codec (`make fla
 | Greet on wake | on | «Слушаю!» right after the wake word |
 | Turn detection eagerness | auto | semantic VAD; `high` answers faster, `low` lets you pause |
 | End session after silence / max length | 25 s / 600 s | |
-| Microphone gain | 16 | the AEC channel without AGC is quiet |
+| Microphone gain | 16 | the AEC channel without AGC is quiet (used only while the device plays) |
+| AGC | on | gentle (≤x3) on the XMOS ASR channel; never lifts the noise floor above −22 dBFS |
+
+Audio notes: OpenAI's server-side `noise_reduction` is deliberately **off** — its `far_field` filter
+garbled clean XMOS audio (turns cut after 1 s, wrong words) and `near_field` heard nothing; the XMOS
+already does AEC/NS. The server VAD runs at threshold 0.5; a command is understood down to about
+−26 dBFS, so no heavy gain is needed, and heavy gain only turns room noise into «speech».
 | Audio base URL | HA internal URL | must be reachable by the device over LAN (http) |
 
 Changing options reloads the entry.

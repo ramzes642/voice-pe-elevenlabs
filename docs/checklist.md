@@ -49,7 +49,7 @@ Goal: «солнце моё» → live full-duplex conversation through the ко
 - [x] Firmware: patched `voice_assistant` (later API subscriber takes over, `rtbridge*` cannot be
       displaced), announcement pipeline `format: NONE` (WAV codec) → fw v17 (`make flash`)
 - [x] `rtbridge` service on the Pi (systemd, enabled): aioesphomeapi VA server + chunked-WAV HTTP +
-      OpenAI Realtime WS (gpt-realtime-2.1, semantic VAD, far-field NR). Mic = ch1 (no AGC, no echo) x16
+      OpenAI Realtime WS (gpt-realtime-2.1, semantic VAD, no server NR). Mic = ch1 (no AGC, no echo) x16
 - [x] Stage 1 loopback (echo of the mic through the device while mic keeps streaming) — verified
 - [x] Stage 2 live dialog: answer starts ~1.6–2.1 s after end of question; 14 s answer plays fully
 - [x] Barge-in: playback cut ~1.1 s after the user starts talking; new question answered
@@ -114,6 +114,17 @@ Goal: «солнце моё» → live full-duplex conversation through the ко
 - [ ] Residual: rare device reboot at session end (lwIP select assert; heap corruption at next
       allocate_buffers_) — 2 in ~40 sessions, both after idle-timeout ends — lwIP select/semaphore assert in tcp_input (not in
       our code; device recovers in ~10 s and the bridge reconnects). Investigate if it becomes frequent
+- [x] Far-field hearing (2026-10-03 evening): the bridge's recording was clean but OpenAI heard
+      «Выключи свет на кухне» as «Это не всегда» → replaying the recording into a Realtime session
+      (`hwtest/rt_replay.py`) showed `noise_reduction: far_field` cutting the turn after 1 s and
+      garbling it (near_field: no speech detected at all); without server NR the same stream is
+      understood down to −26 dBFS peaks. Dropped NR, server_vad threshold 0.5, AGC capped at x3 with
+      the noise floor held ≤ −22 dBFS (a x12 AGC had lifted room noise to full scale and the VAD then
+      kept a turn open for 40 s), 12 s turn cap, in_speech counts as busy ≤ 6 s for the idle timer.
+      Also: direct on/off router runs on the raw command before area stemming («Двор освещение» was
+      being rewritten to «дворик освещение»), device_control refuses generic names («Свет» is the
+      toilet switch), STOP is sent ≥0.5 s after the stream is closed (device WDT crash in lwIP when
+      STOP tore the socket down under its own read), announcement that never starts → player idle.
 - [ ] Tune first-response latency (semantic VAD eagerness), persona, wolt as a tool
 - [ ] Fallback to HA when rtbridge is down (patched fw keeps no fallback pointer — HA gets the
       device back only on its next reconnect)

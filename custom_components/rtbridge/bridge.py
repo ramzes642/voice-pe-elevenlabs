@@ -247,6 +247,7 @@ class Session:
         self.stream_is_echo_reply = False
         self.agc_env = 8000.0            # ch0 (XMOS AGC) speech sits around 0.25-0.9 FS; start near x2
         self.agc_gain = self.b.mic_gain
+        self.noise_floor = 32767.0
         self.rec = None
         self._speex = None
         self._speex_buf = b""
@@ -276,13 +277,18 @@ class Session:
         residual of the device's own voice). ch0 leaks our playback back at -10 dB and tripped the
         VAD, so: ch0 while the device is silent, ch1 (fixed gain, ducked) while it is speaking."""
         self.mic_chunks += 1
+        if not data and not data2:
+            return
         now = time.monotonic()
         muted = now < self.mute_until or now - self.t0 < self.b.start_mute
         playing = self.stream is not None and self.b.dev.recently_playing(1.0)   # + reverb tail of «Готово»
+        use_ch1 = playing and bool(data2) and (not data or len(data2) == len(data))
+        if not data and not use_ch1:
+            return                            # the firmware sends a ch1-only message when only its ring buffer is full
         if muted:
-            data = bytes(len(data))           # echo guard at announcement start / wake chime
+            data = bytes(len(data) or len(data2))   # echo guard at announcement start / wake chime
             self.agc_env = 8000.0             # the chime's residual must not set the AGC envelope
-        elif playing and data2 and len(data2) == len(data):
+        elif use_ch1:
             x = np.frombuffer(data2, dtype=np.int16).astype(np.float32) * self.b.mic_gain * self.b.playback_duck
             data = np.clip(x, -32768, 32767).astype(np.int16).tobytes()
         elif self.b.agc:
@@ -303,18 +309,25 @@ class Session:
         await self.oai.send_audio(pcm24)
 
     def _agc(self, data: bytes) -> bytes:
-        """Fast AGC for the no-AGC mic channel. Instant attack: the gain is computed from the
-        current chunk's own peak (so a loud chunk never clips); slow release (~3 s) so pauses
-        between words do not pump the noise up; gain clamped to [8, 192]. A person across the room
-        is 15-20 dB quieter than the laptop next to the device that the old fixed x16 was fitted to."""
+        """Gentle AGC on top of the XMOS one (ch0). Instant attack from the chunk's own peak, slow
+        release (~3 s). Two caps keep it from turning the room into "speech": the gain never exceeds
+        agc_max (x3) and never lifts the tracked noise floor above -22 dBFS — an earlier x12 version
+        brought the noise between utterances to full scale and OpenAI's server VAD then kept the
+        turn open for 40 s. The model hears a command fine down to -26 dBFS peaks, so little gain
+        is needed; the AGC only evens out near/far speakers."""
         x = np.frombuffer(data, dtype=np.int16).astype(np.float32)
         if len(x) == 0:
             return data
         peak = float(np.abs(x).max())
-        if peak > 25:                                   # above the ch1 noise floor
+        if peak < self.noise_floor:
+            self.noise_floor = max(peak, 1.0)                   # fast down …
+        else:
+            self.noise_floor = self.noise_floor * 0.998 + peak * 0.002   # … slow up (~15 s)
+        if peak > 25:
             self.agc_env = peak if peak > self.agc_env else self.agc_env * 0.99 + peak * 0.01
-        target = 0.85 * 32767               # OpenAI's VAD ignored speech with peaks ~0.5 (rms ~0.1)
-        self.agc_gain = max(self.b.agc_min, min(self.b.agc_max, target / max(self.agc_env, 1.0)))
+        target = 0.7 * 32767
+        noise_cap = 0.08 * 32767 / self.noise_floor
+        self.agc_gain = max(self.b.agc_min, min(self.b.agc_max, target / max(self.agc_env, 1.0), noise_cap))
         return np.clip(x * self.agc_gain, -32768, 32767).astype(np.int16).tobytes()
 
     def _enhance(self, data: bytes) -> bytes:
@@ -351,7 +364,9 @@ class Session:
         log.info("session %s ending: %s (%.1fs, %d mic chunks)", self.id, reason, time.monotonic() - self.t0, self.mic_chunks)
         if self.stream:
             self.stream.close(discard=True)
-        self.b.dev.stop_playback()
+        if self.b.dev.playing:
+            await asyncio.sleep(0.5)                 # let the device finish reading the closed stream before STOP
+            self.b.dev.stop_playback()
         if self.oai:
             await self.oai.close()
         if self.rec is not None:
@@ -374,11 +389,15 @@ class Session:
             if time.monotonic() - self.t0 > self.b.max_session:
                 await self.end("max session length"); return
             if self.oai and self.oai.ready.is_set():
-                if self.oai.turn_stuck(self.b.turn_stall):
+                if self.oai.turn_stuck(self.b.turn_stall) or self.oai.turn_too_long(self.b.max_turn):
                     await self.oai.force_turn()
                 # "Silence" = nobody is talking: not the user (VAD), not the model (response in
                 # flight), not the speaker (playback, which lags the audio stream by seconds).
-                busy = self.oai.in_speech or self.oai.response_active or self.oai.tool_busy or self.b.dev.playing
+                # in_speech counts for at most 6 s: room noise can hold the server VAD in "speech"
+                # indefinitely, and a real sentence is committed by max_turn anyway.
+                speaking = self.oai.in_speech and (self.oai.speech_started_at is None
+                                                   or time.monotonic() - self.oai.speech_started_at < 6.0)
+                busy = speaking or self.oai.response_active or self.oai.tool_busy or self.b.dev.playing
                 quiet_since = max(self.oai.last_activity, self.b.dev.idle_since)
                 if not busy and time.monotonic() - quiet_since > self.b.idle_timeout:
                     await self.end("idle"); return
@@ -405,8 +424,8 @@ class Session:
 
         def on_speech_started():
             if self.stream and not self.stream.closed:
-                self.stream.close(discard=True)
-            dev.stop_playback()
+                self.stream.close(discard=True)      # EOF ends the paced stream within ~lead s
+            dev.stop_playback_later()                # STOP only if still playing half a second later
             dev.user_speaking()
 
         def _words(x: str) -> set[str]:
@@ -514,6 +533,11 @@ class Session:
         """Hand the phrase to a HA conversation agent (built-in intents or any other agent)."""
         if not command:
             return {"error": "empty command"}
+        # The model usually quotes an exact exposed name («включи Двор освещение»): try the direct
+        # router on the untouched phrase first — area stemming would turn «Двор» into «дворик».
+        direct = await self._direct_on_off(command)
+        if direct is not None:
+            return direct
         areas = [a.name for a in ar.async_get(self.b.hass).async_list_areas() if a.name]
         names, _dups = exposed_names(self.b.hass)
         normalized = normalize_names(command, names)
@@ -667,6 +691,10 @@ class Session:
             names = [st.name.lower().replace("ё", "е")] + [a.lower().replace("ё", "е") for a in ((ent.aliases if ent else None) or ()) if isinstance(a, str)]
             if want in names:
                 cands.append(st)
+        if want in self._GENERIC or want in ("светильник", "лампочка", "вентилятор", "розетка", "кондиционер"):
+            # «Свет» is the name of the toilet switch; «выключи свет на кухне» must not hit it
+            return {"ok": False, "error": f"«{args.get('name')}» — общее слово, а не имя устройства: "
+                                          "используй home_assistant с зоной, например «выключи свет в Кухня»"}
         if not cands:
             return {"ok": False, "error": f"устройство «{args.get('name')}» не найдено в списке — назови точное имя"}
         if len(cands) > 1:
@@ -802,7 +830,8 @@ class RtBridge:
         self.instructions = persona + "\n\n" + TOOL_RULES
         self.end_after_action = bool(o.get(OPT_END_AFTER_ACTION, DEFAULT_END_AFTER_ACTION))
         self.agc = bool(o.get(OPT_AGC, DEFAULT_AGC))
-        self.agc_min, self.agc_max = 1.0, 12.0
+        self.agc_min, self.agc_max = 1.0, 3.0
+        self.max_turn = 12.0                 # s of continuous "speech" before the turn is forced (noise)
         self.agc_level = int(o.get(OPT_AGC_LEVEL, DEFAULT_AGC_LEVEL))
         self.ns_level = int(o.get(OPT_NS_LEVEL, DEFAULT_NS_LEVEL))
         self.record = bool(o.get(OPT_RECORD, DEFAULT_RECORD))

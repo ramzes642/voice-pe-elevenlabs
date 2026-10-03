@@ -2,7 +2,7 @@
 
   wss://api.openai.com/v1/realtime?model=…   Authorization: Bearer <key>
   session.update {session:{type:"realtime", instructions, output_modalities:["audio"],
-                  audio:{input:{format:{type:"audio/pcm",rate:24000}, turn_detection, noise_reduction, transcription},
+                  audio:{input:{format:{type:"audio/pcm",rate:24000}, turn_detection, transcription},
                          output:{format, voice}}, tools, tool_choice}}
   → input_audio_buffer.append {audio: b64 pcm16@24k}
   ← response.output_audio.delta / .done, response.done, input_audio_buffer.speech_started,
@@ -42,6 +42,7 @@ class RealtimeSession:
         self.closed = asyncio.Event()
         self.last_activity = time.monotonic()
         self.speech_stopped_at: float | None = None   # for the stuck-turn watchdog
+        self.speech_started_at: float | None = None
         self.response_active = False
         self.in_speech = False
         self.tool_busy = False
@@ -55,12 +56,14 @@ class RealtimeSession:
             "output_modalities": ["audio"],
             "audio": {
                 "input": {"format": {"type": "audio/pcm", "rate": RATE},
-                          "turn_detection": ({"type": "server_vad", "threshold": 0.3, "prefix_padding_ms": 400,
+                          "turn_detection": ({"type": "server_vad", "threshold": 0.5, "prefix_padding_ms": 400,
                                               "silence_duration_ms": 900, "create_response": True,
                                               "interrupt_response": True} if self.eagerness == "server" else
                                              {"type": "semantic_vad", "eagerness": self.eagerness,
                                               "create_response": True, "interrupt_response": True}),
-                          "noise_reduction": {"type": "far_field"},
+                          # No server-side noise_reduction: the XMOS already does NS/AEC, and OpenAI's
+                          # far_field filter wrecked clean speech (turn cut after 1 s, «Выключи свет на
+                          # кухне» heard as «Что же это?»; near_field detected no speech at all).
                           "transcription": {"model": "gpt-4o-transcribe", "language": self.language}},
                 "output": {"format": {"type": "audio/pcm", "rate": RATE}, "voice": self.voice},
             },
@@ -108,9 +111,16 @@ class RealtimeSession:
         return (self.speech_stopped_at is not None and not self.response_active
                 and time.monotonic() - self.speech_stopped_at > after)
 
+    def turn_too_long(self, limit: float) -> bool:
+        """server_vad can sit in 'speech' on steady room noise; cap a turn at `limit` seconds."""
+        return (self.in_speech and self.speech_started_at is not None
+                and time.monotonic() - self.speech_started_at > limit)
+
     async def force_turn(self):
         log.info("turn detection stalled — forcing commit + response")
         self.speech_stopped_at = None
+        self.speech_started_at = None
+        self.in_speech = False
         await self.send({"type": "input_audio_buffer.commit"})
         await self.request_response()
 
@@ -140,6 +150,7 @@ class RealtimeSession:
                 elif t == "input_audio_buffer.speech_started":
                     self.last_activity = time.monotonic()
                     self.speech_stopped_at = None
+                    self.speech_started_at = time.monotonic()
                     self.in_speech = True
                     self.on_speech_started()
                 elif t == "input_audio_buffer.speech_stopped":

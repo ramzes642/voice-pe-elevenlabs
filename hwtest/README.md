@@ -11,6 +11,7 @@ hwtest/
 ├── tts.py              phrase synthesis (macOS `say -v Milena` or ElevenLabs), cached in cache/
 ├── devlog.py           Voice PE log over USB serial, timestamped + parsed into events
 ├── transcribe.py       local faster-whisper with word timestamps → per-second timeline
+├── rt_replay.py        replay a bridge mic recording into OpenAI Realtime: what the server VAD / transcriber hear
 ├── .env.example        copy to .env, fill keys (gitignored)
 └── runs/<ts>/          session.wav, device.log, events.json, timeline.txt, report.json
 ```
@@ -84,6 +85,19 @@ Protocol notes (from the docs, 2026-10): `wss://api.openai.com/v1/realtime?model
 `session.audio.input.format {type: audio/pcm, rate: 24000}`,
 `session.audio.input.turn_detection {type: server_vad | semantic_vad}`,
 `session.audio.output.voice`. No `OpenAI-Beta` header (GA).
+
+## Replaying what the bridge sent
+
+The HA integration can record its mic feed (option *record*, files in `/root/ha-config/rtbridge_rec/`).
+`rt_replay.py` pushes such a 16 kHz recording through the bridge's own resampler into a Realtime
+session with the bridge's session settings, paced to real time, and prints the VAD events, the
+input transcript and what the model itself understood (it is told to repeat the user verbatim):
+
+```bash
+scp rpi:/tmp/rec.wav . && .venv/bin/python rt_replay.py rec.wav --nr none --threshold 0.5
+```
+
+This is how `noise_reduction: far_field` was caught turning «Выключи свет на кухне» into «Что же это?».
 
 ## Standalone transcription
 

@@ -156,6 +156,27 @@ class VoicePE:
         if self.media_key is not None and self.connected.is_set():
             self._player_idle.clear()
             self.client.media_player_command(self.media_key, media_url=url, announcement=True)
+            asyncio.get_running_loop().call_later(3.0, self._check_started)
+
+    def _check_started(self):
+        """The player is assumed busy from play_url on; if the device never reported the
+        announcement starting, do not sit in "playing" (ch1 mic feed, 15 s wait, then a STOP that
+        has crashed the device) — treat it as idle."""
+        if (not self._player_idle.is_set() and self._announcing_since is None
+                and self.media_state in (MediaPlayerState.IDLE, MediaPlayerState.NONE, MediaPlayerState.PAUSED, None)):
+            log.warning("announcement never started on the device (state %s); treating the player as idle", self.media_state)
+            self._player_idle.set()
+            self.idle_since = asyncio.get_running_loop().time()
+
+    def stop_playback_later(self, delay: float = 0.5, min_age: float = 1.5):
+        """STOP after the HTTP stream has been closed and the device had `delay` s to finish
+        reading it. A STOP racing the device's own read of the stream (socket torn down under
+        lwIP's select) crashed it with an interrupt-WDT in the tcpip thread."""
+        async def _later():
+            await asyncio.sleep(delay)
+            if self.playing:
+                self.stop_playback(min_age)
+        asyncio.get_running_loop().create_task(_later())
 
     def stop_playback(self, min_age: float = 1.5) -> bool:
         """STOP the announcement — but only if it has been playing for at least `min_age` s.
