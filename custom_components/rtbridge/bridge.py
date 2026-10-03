@@ -109,13 +109,20 @@ def exposed_inventory(hass: HomeAssistant, limit: int = 120, dup_names: set[str]
     for state in hass.states.async_all():
         eid = state.entity_id
         domain = eid.split(".")[0]
-        if domain in ("sensor", "binary_sensor", "update", "event", "number", "select", "device_tracker"):
+        if domain in ("update", "event", "number", "select", "device_tracker"):
             continue
         if not async_should_expose(hass, "conversation", eid):
             continue
         ent = ent_reg.async_get(eid)
         area_id = (ent.area_id if ent else None) or (dev_reg.async_get(ent.device_id).area_id if ent and ent.device_id and dev_reg.async_get(ent.device_id) else None)
         name = state.name
+        if domain in ("sensor", "binary_sensor"):
+            # read-only, with the current value: lets the model answer «какая температура» directly
+            if state.state in ("unknown", "unavailable", ""):
+                continue
+            unit = state.attributes.get("unit_of_measurement", "")
+            lines.append(f"датчик «{name}» ({areas.get(area_id, 'без зоны')}): {state.state} {unit}".rstrip())
+            continue
         if domain in ("button", "script"):
             dev = dev_reg.async_get(ent.device_id) if ent and ent.device_id else None
             ctx = f", устройство «{dev.name_by_user or dev.name}»" if dev else ""
@@ -404,7 +411,8 @@ class Session:
             inv = exposed_inventory(hass, dup_names=dups)
             ha_tool = dict(TOOL_HA)
             ha_tool["description"] = (TOOL_HA["description"] +
-                " Устройства и зоны, которые знает дом (называй их ТОЧНО этими именами, в именительном падеже, "
+                " Значения датчиков в списке актуальны на начало разговора: на вопрос о температуре/влажности/"
+                "состоянии отвечай по ним сам, без инструмента. Устройства и зоны, которые знает дом (называй их ТОЧНО этими именами, в именительном падеже, "
                 "например «включи Двор освещение» или «выключи свет в Кухня»). Чтобы выключить то, что включал, "
                 "используй то же самое имя устройства (не сцену): сцены нельзя выключать. Список:\n" + inv)
             tools.append(ha_tool)

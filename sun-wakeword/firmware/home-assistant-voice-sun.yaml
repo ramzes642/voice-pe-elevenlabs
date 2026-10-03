@@ -1762,7 +1762,9 @@ micro_wake_word:
                                       id: play_sound
                                       priority: true
                                       sound_file: "wake_word_triggered_sound"
-                                  - delay: 300ms
+                                  # rtbridge: the mic stream starts with ~0.5 s of ring-buffer pre-roll; wait until the chime
+                                  # (0.31 s) has left the pre-roll before starting. Words said meanwhile still arrive via the pre-roll.
+                                  - delay: 800ms
                             - voice_assistant.start:
                                 wake_word: !lambda return wake_word;
 
