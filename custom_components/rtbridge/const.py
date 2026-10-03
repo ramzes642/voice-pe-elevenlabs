@@ -42,7 +42,7 @@ DEFAULT_AGC_LEVEL = 0    # speex auto gain 0-31 (0 = off; the bridge's fast AGC 
 DEFAULT_NS_LEVEL = 0     # speex noise suppression 0-4 (off: it seemed to blind OpenAI's VAD)   # software AGC on the mic feed (x8..x64) instead of the fixed mic_gain
 DEFAULT_RECORD = True   # debug: dump the mic feed to <config>/rtbridge_rec/ (turn off when done)
 DEFAULT_END_AFTER_ACTION = True   # command done → «Готово» → session ends
-DEFAULT_START_MUTE = 1.3   # s of mic ignored after the wake word (chime + AEC settling)
+DEFAULT_START_MUTE = 0.25  # chime is 0.28 s and ends before the stream starts (YAML delay 300 ms); this covers the AEC tail   # s of mic ignored after the wake word (chime + AEC settling)
 DEFAULT_PLAYBACK_DUCK = 0.3   # mic multiplier while the device is speaking (-10 dB)
 DEFAULT_TURN_STALL = 2.0   # s after speech stopped with no response → force the turn   # a greeting right after the wake word collides with users who speak at once
 
@@ -60,7 +60,8 @@ TOOL_RULES = (
     "НЕ контролируешь сам: кондиционер и климат — только через инструмент climate_control; конкретное "
     "устройство из списка (по имени) — через device_control; всё остальное (весь свет в комнате, таймеры, "
     "сцены, вопросы о состоянии) — через home_assistant, передав команду одной русской фразой. Действуй СРАЗУ, "
-    "без вступительных фраз вроде «сейчас» или «секунду», потом коротко сообщи результат. "
+    "без вступительных фраз вроде «сейчас» или «секунду». После команды скажи коротко «Готово»; на вопрос "
+    "о состоянии озвучь ответ дома (поле speech или state) и никогда не говори «Готово» вместо ответа. "
     "Если пользователь прощается, говорит «хватит», «спасибо, всё», «пока» или просит замолчать — "
     "коротко попрощайся и в том же ответе вызови инструмент end_conversation, передав его точные слова. "
     "Без явного прощания инструмент не вызывай. "

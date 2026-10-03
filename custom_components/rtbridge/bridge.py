@@ -219,7 +219,7 @@ class Session:
         self.pending_end_at = 0.0
         self.pending_end_audio_at = 0.0
         self.last_user_text_at = 0.0
-        self.agc_env = 400.0             # quiet start: gain near max until the first loud chunk
+        self.agc_env = 8000.0            # ch0 (XMOS AGC) speech sits around 0.25-0.9 FS; start near x2
         self.agc_gain = self.b.mic_gain
         self.rec = None
         self._speex = None
@@ -244,26 +244,23 @@ class Session:
             await self.end("setup exception")
 
     async def on_audio(self, data: bytes, data2: bytes | None):
+        """Mic feed for the model. Two channels arrive from the device: ch0 = the XMOS pipeline's
+        ASR output (AEC+IC+NS+AGC — what Home Assistant's own STT uses, good far-field level) and
+        ch1 = the same without AGC (very quiet: a voice at 2 m is ~50 LSB, but it carries almost no
+        residual of the device's own voice). ch0 leaks our playback back at -10 dB and tripped the
+        VAD, so: ch0 while the device is silent, ch1 (fixed gain, ducked) while it is speaking."""
         self.mic_chunks += 1
-        if data2:
-            data = data2          # channel 1: no AGC → the device's own voice is ~40 dB down
-        if time.monotonic() < self.mute_until:
-            data = bytes(len(data))   # the AEC leaks the first ~0.7 s of a new announcement
-        elif time.monotonic() - self.t0 < self.b.start_mute:
-            data = bytes(len(data))   # wake chime + AEC settling: first words were garbled 4 runs out of 6
-        # Duck only while *our* response audio is (or just was) playing — the device's wake sound at
-        # session start is also an announcement and must not mute the user's first words.
-        duck = self.b.playback_duck if (self.stream is not None and self.b.dev.recently_playing(0.4)) else 1.0
-        if self.b.agc:
-            data = self._agc(data)       # fast AGC (x8..x192) → steady speech level at any distance
-            if self.b.ns_level or self.b.agc_level:
-                data = self._enhance(data)   # speex noise suppression / AGC when enabled
-        else:
-            x = np.frombuffer(data, dtype=np.int16).astype(np.float32) * self.b.mic_gain
+        now = time.monotonic()
+        muted = now < self.mute_until or now - self.t0 < self.b.start_mute
+        playing = self.stream is not None and self.b.dev.recently_playing(1.0)   # + reverb tail of «Готово»
+        if muted:
+            data = bytes(len(data))           # echo guard at announcement start / wake chime
+            self.agc_env = 8000.0             # the chime's residual must not set the AGC envelope
+        elif playing and data2 and len(data2) == len(data):
+            x = np.frombuffer(data2, dtype=np.int16).astype(np.float32) * self.b.mic_gain * self.b.playback_duck
             data = np.clip(x, -32768, 32767).astype(np.int16).tobytes()
-        if duck != 1.0:   # residual echo of the device's own voice stays under the VAD
-            x = np.frombuffer(data, dtype=np.int16).astype(np.float32) * duck
-            data = x.astype(np.int16).tobytes()
+        elif self.b.agc:
+            data = self._agc(data)            # gentle AGC on top of the XMOS AGC (x1..x8)
         if self.b.record:
             self._record(data)
         pcm24 = resample_16k_to_24k(data, self.rs_state)
@@ -757,7 +754,7 @@ class RtBridge:
         self.instructions = persona + "\n\n" + TOOL_RULES
         self.end_after_action = bool(o.get(OPT_END_AFTER_ACTION, DEFAULT_END_AFTER_ACTION))
         self.agc = bool(o.get(OPT_AGC, DEFAULT_AGC))
-        self.agc_min, self.agc_max = 8.0, 192.0
+        self.agc_min, self.agc_max = 1.0, 8.0
         self.agc_level = int(o.get(OPT_AGC_LEVEL, DEFAULT_AGC_LEVEL))
         self.ns_level = int(o.get(OPT_NS_LEVEL, DEFAULT_NS_LEVEL))
         self.record = bool(o.get(OPT_RECORD, DEFAULT_RECORD))

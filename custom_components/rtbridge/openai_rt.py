@@ -61,7 +61,7 @@ class RealtimeSession:
                                              {"type": "semantic_vad", "eagerness": self.eagerness,
                                               "create_response": True, "interrupt_response": True}),
                           "noise_reduction": {"type": "far_field"},
-                          "transcription": {"model": "gpt-4o-mini-transcribe", "language": self.language}},
+                          "transcription": {"model": "gpt-4o-transcribe", "language": self.language}},
                 "output": {"format": {"type": "audio/pcm", "rate": RATE}, "voice": self.voice},
             },
             "tools": self.tools, "tool_choice": "auto",
