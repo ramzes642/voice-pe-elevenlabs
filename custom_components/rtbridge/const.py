@@ -22,6 +22,10 @@ OPT_TURN_STALL = "turn_stall"
 OPT_PLAYBACK_DUCK = "playback_duck"
 OPT_START_MUTE = "start_mute"
 OPT_END_AFTER_ACTION = "end_after_action"
+OPT_AGC = "agc"
+OPT_AGC_LEVEL = "agc_level"
+OPT_NS_LEVEL = "ns_level"
+OPT_RECORD = "record"
 
 DEFAULT_MODEL = "gpt-realtime-2.1"
 DEFAULT_VOICE = "marin"
@@ -33,6 +37,10 @@ DEFAULT_MIC_GAIN = 16.0
 DEFAULT_VAD_EAGERNESS = "server"   # server_vad 0.9 s silence; semantic_vad (auto/low) split or stalled turns
 DEFAULT_ECHO_GUARD = 0.5   # seconds of mic muted after each announcement starts
 DEFAULT_GREETING = False
+DEFAULT_AGC = True
+DEFAULT_AGC_LEVEL = 0    # speex auto gain 0-31 (0 = off; the bridge's fast AGC runs before speex)
+DEFAULT_NS_LEVEL = 0     # speex noise suppression 0-4 (off: it seemed to blind OpenAI's VAD)   # software AGC on the mic feed (x8..x64) instead of the fixed mic_gain
+DEFAULT_RECORD = True   # debug: dump the mic feed to <config>/rtbridge_rec/ (turn off when done)
 DEFAULT_END_AFTER_ACTION = True   # command done → «Готово» → session ends
 DEFAULT_START_MUTE = 1.3   # s of mic ignored after the wake word (chime + AEC settling)
 DEFAULT_PLAYBACK_DUCK = 0.3   # mic multiplier while the device is speaking (-10 dB)

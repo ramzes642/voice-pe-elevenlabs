@@ -9,6 +9,7 @@ device answer window) so you can see what the колонка said and when.
 """
 from __future__ import annotations
 
+import os
 import sys
 import time
 from datetime import datetime
@@ -44,7 +45,7 @@ def main():
     time.sleep(0.8)
     windows = []   # (start, end, lang) on the recording clock
     for (phrase, wait), (a, r) in zip(steps, audio):
-        s = mark("say", phrase); play(a * 0.7, r); e = mark("said")
+        s = mark("say", phrase); play(a * float(os.environ.get("DIALOG_GAIN", "0.7")), r); e = mark("said")
         windows.append((s.t - rec_offset, e.t - rec_offset, "ru"))
         t_end = time.monotonic() - t0 + wait
         windows.append((e.t - rec_offset, t_end - rec_offset, "ru"))

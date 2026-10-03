@@ -35,12 +35,16 @@
           "vad_eagerness": "Turn detection: server (0.9 s silence) or semantic eagerness",
           "idle_timeout": "End session after silence (s)",
           "max_session": "Max session length (s)",
-          "mic_gain": "Microphone gain (channel without AGC)",
+          "mic_gain": "Base gain of the no-AGC mic channel",
           "audio_base_url": "Audio base URL override (http://HA-LAN-IP:8123)",
           "echo_guard": "Mute mic for N s when the device starts speaking (echo guard)",
           "turn_stall": "Force the turn if no answer N s after speech stops",
           "playback_duck": "Mic multiplier while the device is speaking (echo vs barge-in)",
-          "end_after_action": "End the session right after a completed command"
+          "end_after_action": "End the session right after a completed command",
+          "agc": "Automatic gain + noise suppression (speex, as in Assist)",
+          "record": "Debug: record the mic feed to rtbridge_rec/ in the config dir",
+          "agc_level": "Auto gain level 0–31",
+          "ns_level": "Noise suppression level 0–4"
         }
       }
     }

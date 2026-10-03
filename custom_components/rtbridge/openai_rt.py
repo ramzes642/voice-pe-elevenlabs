@@ -55,7 +55,7 @@ class RealtimeSession:
             "output_modalities": ["audio"],
             "audio": {
                 "input": {"format": {"type": "audio/pcm", "rate": RATE},
-                          "turn_detection": ({"type": "server_vad", "threshold": 0.5, "prefix_padding_ms": 300,
+                          "turn_detection": ({"type": "server_vad", "threshold": 0.4, "prefix_padding_ms": 300,
                                               "silence_duration_ms": 900, "create_response": True,
                                               "interrupt_response": True} if self.eagerness == "server" else
                                              {"type": "semantic_vad", "eagerness": self.eagerness,
@@ -90,6 +90,11 @@ class RealtimeSession:
         if instructions:
             ev["response"] = {"instructions": instructions}
         await self.send(ev)
+
+    async def cancel_response(self):
+        if self.response_active:
+            log.info("cancelling the active response (empty user transcript)")
+            await self.send({"type": "response.cancel"})
 
     async def inject_text(self, text: str, role: str = "user", respond: bool = True):
         await self.send({"type": "conversation.item.create", "item": {

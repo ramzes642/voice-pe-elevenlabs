@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import time
 
@@ -17,7 +18,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.network import get_url
 
 from .const import (DEFAULT_COMMAND_AGENT, DEFAULT_IDLE_TIMEOUT, DEFAULT_INSTRUCTIONS, DEFAULT_LANGUAGE, DEFAULT_PERSONA, TOOL_RULES,
-                    OPT_END_AFTER_ACTION, DEFAULT_END_AFTER_ACTION,
+                    OPT_END_AFTER_ACTION, DEFAULT_END_AFTER_ACTION, OPT_AGC, DEFAULT_AGC, OPT_RECORD, DEFAULT_RECORD, OPT_AGC_LEVEL, DEFAULT_AGC_LEVEL, OPT_NS_LEVEL, DEFAULT_NS_LEVEL,
                     DEFAULT_MAX_SESSION, DEFAULT_MIC_GAIN, DEFAULT_MODEL, DEFAULT_VAD_EAGERNESS, DEFAULT_VOICE,
                     CONF_API_KEY, CONF_HOST, CONF_NOISE_PSK, OPT_AUDIO_BASE_URL, OPT_COMMAND_AGENT, OPT_GREETING,
                     OPT_HA_TOOL, OPT_IDLE_TIMEOUT, OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD, DEFAULT_GREETING, OPT_TURN_STALL, DEFAULT_TURN_STALL, OPT_PLAYBACK_DUCK, DEFAULT_PLAYBACK_DUCK, OPT_START_MUTE, DEFAULT_START_MUTE, OPT_INSTRUCTIONS, OPT_LANGUAGE, OPT_MAX_SESSION, OPT_MIC_GAIN,
@@ -218,6 +219,11 @@ class Session:
         self.pending_end_at = 0.0
         self.pending_end_audio_at = 0.0
         self.last_user_text_at = 0.0
+        self.agc_env = 400.0             # quiet start: gain near max until the first loud chunk
+        self.agc_gain = self.b.mic_gain
+        self.rec = None
+        self._speex = None
+        self._speex_buf = b""
         self.mic_chunks = 0
         self.mute_until = 0.0     # echo guard: ignore the mic for the first moments of each announcement
         self._tasks: list[asyncio.Task] = []
@@ -245,14 +251,21 @@ class Session:
             data = bytes(len(data))   # the AEC leaks the first ~0.7 s of a new announcement
         elif time.monotonic() - self.t0 < self.b.start_mute:
             data = bytes(len(data))   # wake chime + AEC settling: first words were garbled 4 runs out of 6
-        gain = self.b.mic_gain
         # Duck only while *our* response audio is (or just was) playing — the device's wake sound at
         # session start is also an announcement and must not mute the user's first words.
-        if self.stream is not None and self.b.dev.recently_playing(0.4):
-            gain *= self.b.playback_duck   # residual echo of the device's own voice stays under the VAD
-        if gain != 1.0:
-            x = np.frombuffer(data, dtype=np.int16).astype(np.float32) * gain
+        duck = self.b.playback_duck if (self.stream is not None and self.b.dev.recently_playing(0.4)) else 1.0
+        if self.b.agc:
+            data = self._agc(data)       # fast AGC (x8..x192) → steady speech level at any distance
+            if self.b.ns_level or self.b.agc_level:
+                data = self._enhance(data)   # speex noise suppression / AGC when enabled
+        else:
+            x = np.frombuffer(data, dtype=np.int16).astype(np.float32) * self.b.mic_gain
             data = np.clip(x, -32768, 32767).astype(np.int16).tobytes()
+        if duck != 1.0:   # residual echo of the device's own voice stays under the VAD
+            x = np.frombuffer(data, dtype=np.int16).astype(np.float32) * duck
+            data = x.astype(np.int16).tobytes()
+        if self.b.record:
+            self._record(data)
         pcm24 = resample_16k_to_24k(data, self.rs_state)
         if self.oai is None or not self.oai.ready.is_set():
             self.pending.append(pcm24)
@@ -266,6 +279,48 @@ class Session:
             self.pending.clear()
         await self.oai.send_audio(pcm24)
 
+    def _agc(self, data: bytes) -> bytes:
+        """Fast AGC for the no-AGC mic channel. Instant attack: the gain is computed from the
+        current chunk's own peak (so a loud chunk never clips); slow release (~3 s) so pauses
+        between words do not pump the noise up; gain clamped to [8, 192]. A person across the room
+        is 15-20 dB quieter than the laptop next to the device that the old fixed x16 was fitted to."""
+        x = np.frombuffer(data, dtype=np.int16).astype(np.float32)
+        if len(x) == 0:
+            return data
+        peak = float(np.abs(x).max())
+        if peak > 25:                                   # above the ch1 noise floor
+            self.agc_env = peak if peak > self.agc_env else self.agc_env * 0.99 + peak * 0.01
+        target = 0.5 * 32767
+        self.agc_gain = max(self.b.agc_min, min(self.b.agc_max, target / max(self.agc_env, 1.0)))
+        return np.clip(x * self.agc_gain, -32768, 32767).astype(np.int16).tobytes()
+
+    def _enhance(self, data: bytes) -> bytes:
+        """HA's assist_pipeline audio enhancer: speex AGC (auto_gain 0-31 → x300) + noise suppression
+        (0-4 → x-15), on 10 ms frames. The fixed gain alone left far-field speech at -30 dBFS, which
+        the server VAD never picked up; speex brings it to a steady level like HA does for Assist."""
+        if self._speex is None:
+            try:
+                from pyspeex_noise import AudioProcessor
+                self._speex = AudioProcessor(self.b.agc_level * 300, self.b.ns_level * -15)
+            except Exception as e:   # not available (standalone) → fall back to the simple AGC
+                log.warning("pyspeex_noise unavailable (%s); using the simple AGC", e)
+                self._speex = False
+        if self._speex is False:
+            return data
+        buf = self._speex_buf + data
+        out = bytearray()
+        n = (len(buf) // 320) * 320
+        for i in range(0, n, 320):
+            out += self._speex.Process10ms(buf[i:i + 320]).audio
+        self._speex_buf = buf[n:]
+        return bytes(out)
+
+    def _record(self, data: bytes):
+        """Debug: dump the mic feed (after gain) to <config>/rtbridge_rec/<ts>.wav."""
+        if self.rec is None:
+            self.rec = bytearray()          # collected in memory, written at session end off the loop
+        self.rec += data
+
     async def end(self, reason: str):
         if self.ending:
             return
@@ -276,6 +331,15 @@ class Session:
         self.b.dev.stop_playback()
         if self.oai:
             await self.oai.close()
+        if self.rec is not None:
+            buf, self.rec = bytes(self.rec), None
+            path = os.path.join(self.b.hass.config.path("rtbridge_rec"), time.strftime("%Y%m%d_%H%M%S") + ".wav")
+            def _write():
+                import wave
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with wave.open(path, "wb") as w:
+                    w.setnchannels(1); w.setsampwidth(2); w.setframerate(MIC_RATE); w.writeframes(buf)
+            await self.b.hass.async_add_executor_job(_write)
         self.b.dev.session_end()
         for t in self._tasks:
             if t is not asyncio.current_task():
@@ -326,6 +390,13 @@ class Session:
             log.info("USER:  %s", t); self.user_text.append(t)
             if t.strip():
                 self.last_user_text_at = time.monotonic()
+            elif self.oai is not None:
+                # Empty transcript = a VAD blip (echo tail, noise). The model tends to answer it with
+                # a hallucinated «Пока!» + end_conversation: cancel that response and drop its audio.
+                asyncio.get_running_loop().create_task(self.oai.cancel_response())
+                if self.stream and not self.stream.closed:
+                    self.stream.close(discard=True)
+                dev.stop_playback()
 
         def on_agent(t: str):
             log.info("AGENT: %s", t); agent_text["cur"] = ""
@@ -685,6 +756,11 @@ class RtBridge:
             persona = DEFAULT_PERSONA   # empty, or a stale copy of an old full prompt saved by the form
         self.instructions = persona + "\n\n" + TOOL_RULES
         self.end_after_action = bool(o.get(OPT_END_AFTER_ACTION, DEFAULT_END_AFTER_ACTION))
+        self.agc = bool(o.get(OPT_AGC, DEFAULT_AGC))
+        self.agc_min, self.agc_max = 8.0, 192.0
+        self.agc_level = int(o.get(OPT_AGC_LEVEL, DEFAULT_AGC_LEVEL))
+        self.ns_level = int(o.get(OPT_NS_LEVEL, DEFAULT_NS_LEVEL))
+        self.record = bool(o.get(OPT_RECORD, DEFAULT_RECORD))
         self.command_agent = o.get(OPT_COMMAND_AGENT, DEFAULT_COMMAND_AGENT)
         self.language = o.get(OPT_LANGUAGE, DEFAULT_LANGUAGE)
         self.idle_timeout = float(o.get(OPT_IDLE_TIMEOUT, DEFAULT_IDLE_TIMEOUT))
