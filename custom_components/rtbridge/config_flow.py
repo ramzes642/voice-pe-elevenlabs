@@ -14,7 +14,8 @@ from .const import (CONF_API_KEY, CONF_ESPHOME_ENTRY, CONF_HOST, CONF_NOISE_PSK,
                     DEFAULT_MIC_GAIN, DEFAULT_MODEL, DEFAULT_VAD_EAGERNESS, DEFAULT_VOICE, DOMAIN,
                     OPT_AUDIO_BASE_URL, OPT_COMMAND_AGENT, OPT_GREETING, OPT_HA_TOOL, OPT_IDLE_TIMEOUT,
                     OPT_INSTRUCTIONS, OPT_LANGUAGE, OPT_MAX_SESSION, OPT_MIC_GAIN, OPT_MODEL, OPT_VAD_EAGERNESS,
-                    OPT_VOICE, OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD, DEFAULT_GREETING, OPT_TURN_STALL, DEFAULT_TURN_STALL, OPT_PLAYBACK_DUCK, DEFAULT_PLAYBACK_DUCK)
+                    OPT_VOICE, OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD, DEFAULT_GREETING, OPT_TURN_STALL, DEFAULT_TURN_STALL, OPT_PLAYBACK_DUCK, DEFAULT_PLAYBACK_DUCK,
+                    OPT_START_MUTE, DEFAULT_START_MUTE)
 
 log = logging.getLogger(__name__)
 
@@ -104,12 +105,14 @@ class RtBridgeOptionsFlow(config_entries.OptionsFlow):
             vol.Required(OPT_LANGUAGE, default=o.get(OPT_LANGUAGE, DEFAULT_LANGUAGE)): str,
             vol.Required(OPT_GREETING, default=o.get(OPT_GREETING, DEFAULT_GREETING)): bool,
             vol.Required(OPT_VAD_EAGERNESS, default=o.get(OPT_VAD_EAGERNESS, DEFAULT_VAD_EAGERNESS)): selector.SelectSelector(
-                selector.SelectSelectorConfig(options=["auto", "low", "medium", "high"], mode=selector.SelectSelectorMode.DROPDOWN)),
+                selector.SelectSelectorConfig(options=["server", "auto", "low", "medium", "high"], mode=selector.SelectSelectorMode.DROPDOWN)),
             vol.Required(OPT_IDLE_TIMEOUT, default=o.get(OPT_IDLE_TIMEOUT, DEFAULT_IDLE_TIMEOUT)): vol.All(int, vol.Range(5, 600)),
             vol.Required(OPT_MAX_SESSION, default=o.get(OPT_MAX_SESSION, DEFAULT_MAX_SESSION)): vol.All(int, vol.Range(30, 7200)),
             vol.Required(OPT_MIC_GAIN, default=o.get(OPT_MIC_GAIN, DEFAULT_MIC_GAIN)): vol.All(vol.Coerce(float), vol.Range(1, 64)),
             vol.Required(OPT_ECHO_GUARD, default=o.get(OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD)): vol.All(vol.Coerce(float), vol.Range(0, 3)),
-            vol.Required(OPT_TURN_STALL, default=o.get(OPT_TURN_STALL, DEFAULT_TURN_STALL, OPT_PLAYBACK_DUCK, DEFAULT_PLAYBACK_DUCK)): vol.All(vol.Coerce(float), vol.Range(0.5, 10)),
+            vol.Required(OPT_TURN_STALL, default=o.get(OPT_TURN_STALL, DEFAULT_TURN_STALL)): vol.All(vol.Coerce(float), vol.Range(0.5, 10)),
+            vol.Required(OPT_PLAYBACK_DUCK, default=o.get(OPT_PLAYBACK_DUCK, DEFAULT_PLAYBACK_DUCK)): vol.All(vol.Coerce(float), vol.Range(0.0, 1.0)),
+            vol.Required(OPT_START_MUTE, default=o.get(OPT_START_MUTE, DEFAULT_START_MUTE)): vol.All(vol.Coerce(float), vol.Range(0.0, 3.0)),
             vol.Optional(OPT_AUDIO_BASE_URL, description={"suggested_value": o.get(OPT_AUDIO_BASE_URL, "")}): str,
         })
         return self.async_show_form(step_id="init", data_schema=schema)

@@ -19,7 +19,7 @@ from homeassistant.helpers.network import get_url
 from .const import (DEFAULT_COMMAND_AGENT, DEFAULT_IDLE_TIMEOUT, DEFAULT_INSTRUCTIONS, DEFAULT_LANGUAGE,
                     DEFAULT_MAX_SESSION, DEFAULT_MIC_GAIN, DEFAULT_MODEL, DEFAULT_VAD_EAGERNESS, DEFAULT_VOICE,
                     CONF_API_KEY, CONF_HOST, CONF_NOISE_PSK, OPT_AUDIO_BASE_URL, OPT_COMMAND_AGENT, OPT_GREETING,
-                    OPT_HA_TOOL, OPT_IDLE_TIMEOUT, OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD, DEFAULT_GREETING, OPT_TURN_STALL, DEFAULT_TURN_STALL, OPT_PLAYBACK_DUCK, DEFAULT_PLAYBACK_DUCK, OPT_INSTRUCTIONS, OPT_LANGUAGE, OPT_MAX_SESSION, OPT_MIC_GAIN,
+                    OPT_HA_TOOL, OPT_IDLE_TIMEOUT, OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD, DEFAULT_GREETING, OPT_TURN_STALL, DEFAULT_TURN_STALL, OPT_PLAYBACK_DUCK, DEFAULT_PLAYBACK_DUCK, OPT_START_MUTE, DEFAULT_START_MUTE, OPT_INSTRUCTIONS, OPT_LANGUAGE, OPT_MAX_SESSION, OPT_MIC_GAIN,
                     OPT_MODEL, OPT_VAD_EAGERNESS, OPT_VOICE, STREAM_PATH)
 from .device import VoicePE
 from .http import Stream, new_stream
@@ -37,6 +37,19 @@ TOOL_END = {
     "parameters": {"type": "object", "properties": {
         "quote": {"type": "string", "description": "дословные слова пользователя, которыми он попрощался"}},
         "required": ["quote"]},
+}
+TOOL_CLIMATE = {
+    "type": "function", "name": "climate_control",
+    "description": "Кондиционер / климат (сущности climate из списка): включить (режим cool по умолчанию, heat — "
+                   "только если попросили греть), выключить, задать температуру или режим. Для кондиционеров "
+                   "используй ТОЛЬКО этот инструмент, не home_assistant.",
+    "parameters": {"type": "object", "properties": {
+        "name": {"type": "string", "description": "точное имя климат-устройства из списка, например «Кондиционер»"},
+        "action": {"type": "string", "enum": ["turn_on", "turn_off", "set_temperature", "set_mode"]},
+        "mode": {"type": "string", "enum": ["cool", "heat", "auto", "dry", "fan_only"],
+                 "description": "режим для turn_on/set_mode (по умолчанию cool)"},
+        "temperature": {"type": "number", "description": "целевая температура в °C для set_temperature"}},
+        "required": ["name", "action"]},
 }
 TOOL_HA = {
     "type": "function", "name": "home_assistant",
@@ -120,8 +133,11 @@ def exposed_names(hass: HomeAssistant) -> tuple[list[str], set[str]]:
         ent = ent_reg.async_get(eid)
         for n in [state.name] + [a for a in ((ent.aliases if ent else None) or ()) if isinstance(a, str)]:
             if n:
-                names.append(n)
                 seen[n.lower()] = seen.get(n.lower(), 0) + 1
+                # scene/script/automation names are often verb phrases («Выключить кондиционер»);
+                # stem-matching them would rewrite the command's own verb — keep them out
+                if eid.split(".")[0] not in ("scene", "script", "automation"):
+                    names.append(n)
     dups = {n for n, c in seen.items() if c > 1}
     return names, dups
 
@@ -198,10 +214,12 @@ class Session:
             data = data2          # channel 1: no AGC → the device's own voice is ~40 dB down
         if time.monotonic() < self.mute_until:
             data = bytes(len(data))   # the AEC leaks the first ~0.7 s of a new announcement
+        elif time.monotonic() - self.t0 < self.b.start_mute:
+            data = bytes(len(data))   # wake chime + AEC settling: first words were garbled 4 runs out of 6
         gain = self.b.mic_gain
         # Duck only while *our* response audio is (or just was) playing — the device's wake sound at
         # session start is also an announcement and must not mute the user's first words.
-        if self.stream is not None and self.b.dev.recently_playing(0.8):
+        if self.stream is not None and self.b.dev.recently_playing(0.4):
             gain *= self.b.playback_duck   # residual echo of the device's own voice stays under the VAD
         if gain != 1.0:
             x = np.frombuffer(data, dtype=np.int16).astype(np.float32) * gain
@@ -285,6 +303,9 @@ class Session:
                 "например «включи Двор освещение» или «выключи свет в Кухня»). Чтобы выключить то, что включал, "
                 "используй то же самое имя устройства (не сцену): сцены нельзя выключать. Список:\n" + inv)
             tools.append(ha_tool)
+            if any(st.entity_id.startswith("climate.") and async_should_expose(hass, "conversation", st.entity_id)
+                   for st in hass.states.async_all()):
+                tools.append(TOOL_CLIMATE)
         self.oai = RealtimeSession(async_get_clientsession(hass), self.b.api_key, model=self.b.model, voice=self.b.voice,
                                    instructions=self.b.instructions, tools=tools, language=self.b.language,
                                    eagerness=self.b.eagerness, on_audio=on_audio, on_audio_done=on_audio_done,
@@ -309,7 +330,7 @@ class Session:
             quote = (args.get("quote") or "").strip()
             # The transcript of the farewell usually lands *after* the tool call: give it up to 3 s.
             n = len(self.user_text)
-            for _ in range(30):
+            for _ in range(50):
                 if len(self.user_text) > n or (self.user_text and _quote_in(quote, self.user_text[-1])):
                     break
                 await asyncio.sleep(0.1)
@@ -322,6 +343,8 @@ class Session:
             return {"ok": True, "_no_response": True}
         if name == "home_assistant":
             return await self._ha_command(args.get("command") or "")
+        if name == "climate_control":
+            return await self._climate(args)
         return {"error": f"unknown tool {name}", "_no_response": True}
 
     async def _ha_command(self, command: str) -> dict:
@@ -330,7 +353,18 @@ class Session:
             return {"error": "empty command"}
         areas = [a.name for a in ar.async_get(self.b.hass).async_list_areas() if a.name]
         names, _dups = exposed_names(self.b.hass)
-        normalized = normalize_areas(normalize_names(command, names), areas)
+        normalized = normalize_names(command, names)
+        # area normalization must not rewrite words inside an already exact entity name
+        # («Охлаждение спальни» → «Охлаждение Спальня» broke the match): mask names first
+        masks: dict[str, str] = {}
+        for i, n in enumerate(sorted(set(names), key=len, reverse=True)):
+            if n and n in normalized:
+                key = f"\x00{i}\x00"
+                masks[key] = n
+                normalized = normalized.replace(n, key)
+        normalized = normalize_areas(normalized, areas)
+        for key, n in masks.items():
+            normalized = normalized.replace(key, n)
         if normalized != command:
             log.info("area names normalized: %r → %r", command, normalized)
             command = normalized
@@ -368,6 +402,63 @@ class Session:
         log.info("HA → %s", out)
         return out
 
+    async def _climate(self, args: dict) -> dict:
+        """Direct climate control: HA's built-in intents can set a temperature but cannot switch a
+        climate entity on/off, so «включи кондиционер» needs a service call."""
+        hass = self.b.hass
+        want = (args.get("name") or "").strip().lower().replace("ё", "е")
+        cands = [st for st in hass.states.async_all("climate") if async_should_expose(hass, "conversation", st.entity_id)]
+        match = [st for st in cands if st.name.lower().replace("ё", "е") == want] or \
+                [st for st in cands if want and (want in st.name.lower() or st.name.lower()[:5] in want)] or \
+                (cands if len(cands) == 1 else [])
+        if not match:
+            return {"ok": False, "error": f"климат-устройство «{args.get('name')}» не найдено; есть: {[c.name for c in cands]}"}
+        st = match[0]
+        modes = st.attributes.get("hvac_modes") or ["cool", "heat", "off"]
+        action = args.get("action")
+        try:
+            if action == "turn_off":
+                await hass.services.async_call("climate", "set_hvac_mode", {"entity_id": st.entity_id, "hvac_mode": "off"}, blocking=True)
+                result = {"ok": True, "entity": st.name, "hvac_mode": "off"}
+            elif action in ("turn_on", "set_mode"):
+                mode = args.get("mode") or "cool"
+                if mode not in modes:
+                    return {"ok": False, "error": f"режим {mode} недоступен, доступны: {modes}"}
+                await hass.services.async_call("climate", "set_hvac_mode", {"entity_id": st.entity_id, "hvac_mode": mode}, blocking=True)
+                result = {"ok": True, "entity": st.name, "hvac_mode": mode}
+            elif action == "set_temperature":
+                t = args.get("temperature")
+                if t is None:
+                    return {"ok": False, "error": "не указана температура"}
+                lo, hi = st.attributes.get("min_temp", 16), st.attributes.get("max_temp", 30)
+                t = max(lo, min(hi, float(t)))
+                data = {"entity_id": st.entity_id, "temperature": t}
+                if st.state == "off":
+                    data["hvac_mode"] = "cool" if "cool" in modes else modes[0]
+                await hass.services.async_call("climate", "set_temperature", data, blocking=True)
+                result = {"ok": True, "entity": st.name, "temperature": t, "hvac_mode": data.get("hvac_mode", st.state)}
+            else:
+                return {"ok": False, "error": f"неизвестное действие {action}"}
+        except Exception as e:
+            log.warning("climate call failed: %s", e)
+            return {"ok": False, "error": str(e)[:200]}
+        await asyncio.sleep(0.5)
+        if action == "set_temperature":
+            # The house has automations that react to the AC switching on by applying their own
+            # preset (climate off→cool → downstairs toggle → set_temperature 27). Give them 2 s,
+            # then re-apply the temperature the user actually asked for.
+            await asyncio.sleep(2.0)
+            now = hass.states.get(st.entity_id)
+            if now and now.attributes.get("temperature") not in (None, result["temperature"]):
+                log.info("temperature overridden to %s by an automation — re-applying %s", now.attributes.get("temperature"), result["temperature"])
+                await hass.services.async_call("climate", "set_temperature", {"entity_id": st.entity_id, "temperature": result["temperature"]}, blocking=True)
+                await asyncio.sleep(0.5)
+        now = hass.states.get(st.entity_id)
+        result["state_now"] = {"hvac_mode": now.state, "target": now.attributes.get("temperature"),
+                               "current": now.attributes.get("current_temperature")} if now else None
+        log.info("climate %s → %s", args, result)
+        return result
+
     async def _end_after_playback(self):
         for _ in range(100):
             if self.stream is None or self.stream.closed:
@@ -396,6 +487,7 @@ class RtBridge:
         self.echo_guard = float(o.get(OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD))
         self.turn_stall = float(o.get(OPT_TURN_STALL, DEFAULT_TURN_STALL))
         self.playback_duck = float(o.get(OPT_PLAYBACK_DUCK, DEFAULT_PLAYBACK_DUCK))
+        self.start_mute = float(o.get(OPT_START_MUTE, DEFAULT_START_MUTE))
         self.base_url = (o.get(OPT_AUDIO_BASE_URL) or get_url(hass, allow_external=False, allow_cloud=False,
                                                                 allow_ip=True, require_ssl=False)).rstrip("/")
         self.dev: VoicePE | None = None

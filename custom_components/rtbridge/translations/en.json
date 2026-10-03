@@ -32,7 +32,7 @@
           "command_agent": "Conversation agent that executes commands",
           "language": "Language",
           "greeting": "Greet on wake",
-          "vad_eagerness": "Turn detection eagerness",
+          "vad_eagerness": "Turn detection: server (0.9 s silence) or semantic eagerness",
           "idle_timeout": "End session after silence (s)",
           "max_session": "Max session length (s)",
           "mic_gain": "Microphone gain (channel without AGC)",

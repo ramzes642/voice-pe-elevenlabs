@@ -523,6 +523,9 @@ void VoiceAssistant::client_subscription(api::APIConnection *client, bool subscr
       ESP_LOGE(TAG, "Client attempting to unsubscribe that is not the current API Client");
       return;
     }
+    // Called from ~APIConnection while APIServer erases the client: do not log or send anything
+    // here (the logger's API callback walks the clients vector → crash). Just drop the owner and
+    // let the YAML's on_client_disconnected handle the stop, as stock does.
     this->api_client_ = nullptr;
     this->client_disconnected_trigger_.trigger();
     return;
