@@ -58,7 +58,8 @@ TOOL_DEVICE = {
                    "назвал устройство. Для «весь свет в комнате», таймеров, сцен и вопросов используй home_assistant.",
     "parameters": {"type": "object", "properties": {
         "name": {"type": "string", "description": "точное имя или алиас устройства из списка"},
-        "action": {"type": "string", "enum": ["turn_on", "turn_off", "toggle"]}},
+        "action": {"type": "string", "enum": ["turn_on", "turn_off", "toggle", "press"],
+                   "description": "press — нажать кнопку или запустить скрипт"}},
         "required": ["name", "action"]},
 }
 TOOL_HA = {
@@ -106,13 +107,25 @@ def exposed_inventory(hass: HomeAssistant, limit: int = 120, dup_names: set[str]
     for state in hass.states.async_all():
         eid = state.entity_id
         domain = eid.split(".")[0]
-        if domain in ("sensor", "binary_sensor", "update", "button", "event", "number", "select", "device_tracker"):
+        if domain in ("sensor", "binary_sensor", "update", "event", "number", "select", "device_tracker"):
             continue
         if not async_should_expose(hass, "conversation", eid):
             continue
         ent = ent_reg.async_get(eid)
         area_id = (ent.area_id if ent else None) or (dev_reg.async_get(ent.device_id).area_id if ent and ent.device_id and dev_reg.async_get(ent.device_id) else None)
         name = state.name
+        if domain in ("button", "script"):
+            dev = dev_reg.async_get(ent.device_id) if ent and ent.device_id else None
+            ctx = f", устройство «{dev.name_by_user or dev.name}»" if dev else ""
+            aliases = sorted(a for a in ((ent.aliases if ent else None) or ()) if isinstance(a, str)) if ent else []
+            line = (f"кнопка «{name}»{ctx} — device_control(name, press)" if domain == "button"
+                    else f"скрипт «{name}» — device_control(name, press)")
+            if aliases:
+                line += " алиасы: " + ", ".join(aliases)
+            if state.state == "unavailable":
+                line += " [сейчас недоступна]"
+            lines.append(line)
+            continue
         aliases = sorted(a for a in (ent.aliases or ()) if isinstance(a, str)) if ent else []
         if domain == "scene":
             line = f"сцена «{name}» ({areas.get(area_id, 'без зоны')}) — только «активируй сцену {name}»"
@@ -425,9 +438,40 @@ class Session:
     _ONOFF_RE = re.compile(r"^\s*(включи|включить|выключи|выключить)\s+(.+?)(?:\s+(?:в|во|на)\s+(.+?))?\s*[.!]?\s*$", re.I)
     _GENERIC = {"свет", "лампа", "лампы", "музыка", "музыку", "всё", "все", "всe"}
 
+    async def _press_by_phrase(self, command: str) -> dict | None:
+        """«выключи комп» == alias «Выключить комп» of a button/script → press/run it. Buttons and
+        scripts are named by what they do, so the whole phrase (verb in the infinitive) is the key."""
+        hass = self.b.hass
+        phrase = command.replace("ё", "е").strip().rstrip(".!").lower()
+        phrase = re.sub(r"^(включи|включить)\b", "включить", phrase)
+        phrase = re.sub(r"^(выключи|выключить)\b", "выключить", phrase)
+        ent_reg = er.async_get(hass)
+        for st in hass.states.async_all():
+            dom = st.entity_id.split(".")[0]
+            if dom not in ("button", "script") or not async_should_expose(hass, "conversation", st.entity_id):
+                continue
+            ent = ent_reg.async_get(st.entity_id)
+            names = [st.name.lower().replace("ё", "е")] + [a.lower().replace("ё", "е") for a in ((ent.aliases if ent else None) or ()) if isinstance(a, str)]
+            if phrase in names:
+                if st.state == "unavailable":
+                    return {"ok": False, "error": f"{st.name} сейчас недоступно (unavailable)", "targets": [st.name]}
+                svc = ("button", "press") if dom == "button" else ("script", "turn_on")
+                try:
+                    await hass.services.async_call(svc[0], svc[1], {"entity_id": st.entity_id}, blocking=True)
+                except Exception as e:
+                    return {"ok": False, "error": str(e)[:200]}
+                res = {"ok": True, "response_type": "action_done", "speech": f"{st.name}: {svc[1]}", "targets": [st.name]}
+                log.info("press-by-phrase %r → %s", command, res)
+                return res
+        return None
+
     async def _direct_on_off(self, command: str) -> dict | None:
+        pressed = await self._press_by_phrase(command)
+        if pressed is not None:
+            return pressed
         m = self._ONOFF_RE.match(command.replace("ё", "е"))
         if not m:
+            log.debug("direct: no verb match for %r", command)
             return None
         verb, name, area = m.group(1).lower(), m.group(2).strip(), (m.group(3) or "").strip()
         if name.lower() in self._GENERIC or len(name) < 4:
@@ -452,6 +496,7 @@ class Session:
                 continue
             cands.append(st)
         if len(cands) != 1:
+            log.info("direct: %d candidates for %r (area=%r) — leaving it to HA", len(cands), name, area)
             return None   # let HA's own matcher handle it (and report duplicates / misses)
         st = cands[0]
         if st.state == "unavailable":
@@ -478,7 +523,7 @@ class Session:
         cands = []
         for st in hass.states.async_all():
             dom = st.entity_id.split(".")[0]
-            if dom in ("sensor", "binary_sensor", "climate", "scene", "automation", "script", "button", "event", "update"):
+            if dom in ("sensor", "binary_sensor", "climate", "scene", "automation", "event", "update"):
                 continue
             if not async_should_expose(hass, "conversation", st.entity_id):
                 continue
@@ -500,11 +545,17 @@ class Session:
         st = cands[0]
         if st.state == "unavailable":
             return {"ok": False, "error": f"{st.name} сейчас недоступно (unavailable)"}
-        service = action if action in ("turn_on", "turn_off", "toggle") else None
-        if not service:
+        dom = st.entity_id.split(".")[0]
+        if dom == "button":
+            domain_svc, service = "button", "press"
+        elif dom == "script":
+            domain_svc, service = "script", "turn_on"
+        elif action in ("turn_on", "turn_off", "toggle"):
+            domain_svc, service = "homeassistant", action
+        else:
             return {"ok": False, "error": f"неизвестное действие {action}"}
         try:
-            await hass.services.async_call("homeassistant", service, {"entity_id": st.entity_id}, blocking=True)
+            await hass.services.async_call(domain_svc, service, {"entity_id": st.entity_id}, blocking=True)
         except Exception as e:
             return {"ok": False, "error": str(e)[:200]}
         await asyncio.sleep(1.0)

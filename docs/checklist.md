@@ -97,6 +97,13 @@ Goal: «солнце моё» → live full-duplex conversation through the ко
       normalization, duplicate-name hints, direct on/off pre-router for exact names (HA's fan-domain
       rule + broken ru response template), server_vad (semantic VAD split/stalled turns), start-mute
       1.3 s after the wake word, options-flow fix, fw v19 (crash when a client disconnected mid-session).
+- [x] Tab «Сервер и комп» (2026-10-03): «включи сервер» / «выключи сервер» → `switch.fumigator` (P110) on/off
+      verified; «включи комп» → `script.windows_wake` (WoL) ran, PC came up; «выключи комп» → `button.desktop_
+      ramzes_satellite_sleep` pressed (HASS.Agent). Needed: expose script+button to Assist, aliases («Сервер»,
+      «Включить комп»/«Комп», «Выключить комп»), bridge: buttons/scripts in the inventory, device_control(press),
+      phrase→button/script matching («выключи комп» == alias «Выключить комп»). `switch.tualet_vent` renamed to
+      «Вентилятор туалета». Automation `rtbridge_defaults_off_on_start` turns off дворик + охлаждение спальни
+      ~50 s after HA start (they restore «on» from the previous run)
 - [ ] Known: words spoken while the wake chime is still playing (~0.8 s after the wake word) are often
       lost or garbled (chime + AEC residual). Speak after the chime, or turn off the device's «Wake sound»
       switch. Mic ducking applies only during the agent's own playback for that reason
