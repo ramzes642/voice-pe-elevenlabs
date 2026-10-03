@@ -22,7 +22,8 @@ substitutions:
   mute_switch_on_sound_file: https://github.com/esphome/home-assistant-voice-pe/raw/26.5.0/sounds/mute_switch_on.flac
   mute_switch_off_sound_file: https://github.com/esphome/home-assistant-voice-pe/raw/26.5.0/sounds/mute_switch_off.flac
   timer_finished_sound_file: https://github.com/esphome/home-assistant-voice-pe/raw/26.5.0/sounds/timer_finished.flac
-  wake_word_triggered_sound_file: https://github.com/esphome/home-assistant-voice-pe/raw/26.5.0/sounds/wake_word_triggered.flac
+  # custom wake chime (repo: sun-wakeword/firmware/sounds/, synced to /opt/sounds by `make sync`)
+  wake_word_triggered_sound_file: /config/sounds/siri-start.mp3
   center_button_press_sound_file: https://github.com/esphome/home-assistant-voice-pe/raw/26.5.0/sounds/center_button_press.flac
   center_button_double_press_sound_file: https://github.com/esphome/home-assistant-voice-pe/raw/26.5.0/sounds/center_button_double_press.flac
   center_button_triple_press_sound_file: https://github.com/esphome/home-assistant-voice-pe/raw/26.5.0/sounds/center_button_triple_press.flac

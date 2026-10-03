@@ -284,7 +284,11 @@ class Session:
             if self.oai and self.oai.ready.is_set():
                 if self.oai.turn_stuck(self.b.turn_stall):
                     await self.oai.force_turn()
-                if time.monotonic() - self.oai.last_activity > self.b.idle_timeout:
+                # "Silence" = nobody is talking: not the user (VAD), not the model (response in
+                # flight), not the speaker (playback, which lags the audio stream by seconds).
+                busy = self.oai.in_speech or self.oai.response_active or self.b.dev.playing
+                quiet_since = max(self.oai.last_activity, self.b.dev.idle_since)
+                if not busy and time.monotonic() - quiet_since > self.b.idle_timeout:
                     await self.end("idle"); return
                 if self.oai.closed.is_set():
                     await self.end("openai connection closed"); return

@@ -106,7 +106,7 @@ class RtBridgeOptionsFlow(config_entries.OptionsFlow):
             vol.Required(OPT_GREETING, default=o.get(OPT_GREETING, DEFAULT_GREETING)): bool,
             vol.Required(OPT_VAD_EAGERNESS, default=o.get(OPT_VAD_EAGERNESS, DEFAULT_VAD_EAGERNESS)): selector.SelectSelector(
                 selector.SelectSelectorConfig(options=["server", "auto", "low", "medium", "high"], mode=selector.SelectSelectorMode.DROPDOWN)),
-            vol.Required(OPT_IDLE_TIMEOUT, default=o.get(OPT_IDLE_TIMEOUT, DEFAULT_IDLE_TIMEOUT)): vol.All(int, vol.Range(5, 600)),
+            vol.Required(OPT_IDLE_TIMEOUT, default=o.get(OPT_IDLE_TIMEOUT, DEFAULT_IDLE_TIMEOUT)): vol.All(int, vol.Range(3, 600)),
             vol.Required(OPT_MAX_SESSION, default=o.get(OPT_MAX_SESSION, DEFAULT_MAX_SESSION)): vol.All(int, vol.Range(30, 7200)),
             vol.Required(OPT_MIC_GAIN, default=o.get(OPT_MIC_GAIN, DEFAULT_MIC_GAIN)): vol.All(vol.Coerce(float), vol.Range(1, 64)),
             vol.Required(OPT_ECHO_GUARD, default=o.get(OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD)): vol.All(vol.Coerce(float), vol.Range(0, 3)),

@@ -43,6 +43,7 @@ class RealtimeSession:
         self.last_activity = time.monotonic()
         self.speech_stopped_at: float | None = None   # for the stuck-turn watchdog
         self.response_active = False
+        self.in_speech = False
         self._task: asyncio.Task | None = None
 
     async def connect(self):
@@ -133,9 +134,12 @@ class RealtimeSession:
                 elif t == "input_audio_buffer.speech_started":
                     self.last_activity = time.monotonic()
                     self.speech_stopped_at = None
+                    self.in_speech = True
                     self.on_speech_started()
                 elif t == "input_audio_buffer.speech_stopped":
                     self.speech_stopped_at = time.monotonic()
+                    self.last_activity = time.monotonic()
+                    self.in_speech = False
                 elif t == "response.output_audio_transcript.done":
                     if self.on_agent_transcript:
                         self.on_agent_transcript(ev.get("transcript", ""))

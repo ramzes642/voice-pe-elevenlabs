@@ -39,6 +39,8 @@ sync:
 	@md5 -q $(FW_DIR)/$(FW_YAML) $(FW_DIR)/sun.tflite | sed 's/^/local  /'
 	rsync -a --delete $(FW_DIR)/components/ $(RPI):/tmp/fw_components/
 	ssh $(RPI) 'sudo rsync -a --delete /tmp/fw_components/ $(RPI_DIR)/components/'
+	rsync -a $(FW_DIR)/sounds/ $(RPI):/tmp/fw_sounds/
+	ssh $(RPI) 'sudo mkdir -p $(RPI_DIR)/sounds && sudo rsync -a /tmp/fw_sounds/ $(RPI_DIR)/sounds/'
 
 ## build: compile on the Pi (first build downloads the IDF toolchain, tens of minutes; later ones take minutes)
 build: sync
