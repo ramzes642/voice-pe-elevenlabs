@@ -1697,6 +1697,7 @@ external_components:
       path: /config/components
     components:
       - voice_assistant
+      - api   # null-pointer fix in VoiceAssistantConfigurationResponse for non-owner clients
 
 audio_dac:
   - platform: aic3204

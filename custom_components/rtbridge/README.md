@@ -19,7 +19,7 @@ and with Home Assistant itself as a tool the voice agent can call.
 3. Stop the standalone service if it is running: `make bridge-stop` (and `sudo systemctl disable rtbridge`).
    Both subscribe as `rtbridge*`; the last one to subscribe wins, so run only one.
 
-Needs firmware with the patched `voice_assistant` + WAV codec (`make flash`, fw ≥ v17).
+Needs firmware with the patched `voice_assistant` + `api` + WAV codec (`make flash`, fw ≥ v18).
 
 ## Options (⚙ Configure)
 

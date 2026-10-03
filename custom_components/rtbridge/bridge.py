@@ -14,7 +14,7 @@ from homeassistant.helpers.network import get_url
 from .const import (DEFAULT_COMMAND_AGENT, DEFAULT_IDLE_TIMEOUT, DEFAULT_INSTRUCTIONS, DEFAULT_LANGUAGE,
                     DEFAULT_MAX_SESSION, DEFAULT_MIC_GAIN, DEFAULT_MODEL, DEFAULT_VAD_EAGERNESS, DEFAULT_VOICE,
                     CONF_API_KEY, CONF_HOST, CONF_NOISE_PSK, OPT_AUDIO_BASE_URL, OPT_COMMAND_AGENT, OPT_GREETING,
-                    OPT_HA_TOOL, OPT_IDLE_TIMEOUT, OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD, OPT_INSTRUCTIONS, OPT_LANGUAGE, OPT_MAX_SESSION, OPT_MIC_GAIN,
+                    OPT_HA_TOOL, OPT_IDLE_TIMEOUT, OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD, DEFAULT_GREETING, OPT_INSTRUCTIONS, OPT_LANGUAGE, OPT_MAX_SESSION, OPT_MIC_GAIN,
                     OPT_MODEL, OPT_VAD_EAGERNESS, OPT_VOICE, STREAM_PATH)
 from .device import VoicePE
 from .http import Stream, new_stream
@@ -245,7 +245,7 @@ class RtBridge:
         self.language = o.get(OPT_LANGUAGE, DEFAULT_LANGUAGE)
         self.idle_timeout = float(o.get(OPT_IDLE_TIMEOUT, DEFAULT_IDLE_TIMEOUT))
         self.max_session = float(o.get(OPT_MAX_SESSION, DEFAULT_MAX_SESSION))
-        self.greeting = bool(o.get(OPT_GREETING, True))
+        self.greeting = bool(o.get(OPT_GREETING, DEFAULT_GREETING))
         self.mic_gain = float(o.get(OPT_MIC_GAIN, DEFAULT_MIC_GAIN))
         self.eagerness = o.get(OPT_VAD_EAGERNESS, DEFAULT_VAD_EAGERNESS)
         self.ha_tool = bool(o.get(OPT_HA_TOOL, True))

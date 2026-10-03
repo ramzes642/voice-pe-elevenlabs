@@ -65,9 +65,15 @@ Goal: «солнце моё» → live full-duplex conversation through the ко
       <config>/rtbridge.env), standalone systemd bridge disabled. Verified by voice 2026-10-03:
       «включи/выключи свет в гостиной» → built-in agent `action_done` in 30 ms → agent confirms;
       «спасибо, пока» → end_conversation → device idle
-- [ ] Pending HA restart: echo guard (mute mic 0.8 s at announcement start), no filler before tool
+- [x] HA restarted with: echo guard (mute mic 0.8 s at announcement start), no filler before tool
       calls, farewell guard waits for the transcript, translation fix
-- [ ] Tune first-response latency (semantic VAD eagerness, greeting), persona
+- [x] Device crash on every HA reconnect found and fixed: stock `api` sends a VoiceAssistantConfigurationResponse
+      with a null `active_wake_words` pointer to a non-owner client → LoadProhibited. Patched copy in
+      `sun-wakeword/firmware/components/api/` (fw v18). Worth an upstream PR to esphome/esphome.
+- [x] fw v18 + HA restart verified: no crash on HA reconnect; «включи/выключи свет» → tool fires at once,
+      «Готово, свет выключен» ~3 s after the user stops; farewell ends the session
+- [x] Greeting off by default (collided with users who speak right after the wake word), echo guard 0.5 s
+- [ ] Tune first-response latency (semantic VAD eagerness), persona, wolt as a tool
 - [ ] Fallback to HA when rtbridge is down (patched fw keeps no fallback pointer — HA gets the
       device back only on its next reconnect)
 

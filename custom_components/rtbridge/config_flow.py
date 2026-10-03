@@ -14,7 +14,7 @@ from .const import (CONF_API_KEY, CONF_ESPHOME_ENTRY, CONF_HOST, CONF_NOISE_PSK,
                     DEFAULT_MIC_GAIN, DEFAULT_MODEL, DEFAULT_VAD_EAGERNESS, DEFAULT_VOICE, DOMAIN,
                     OPT_AUDIO_BASE_URL, OPT_COMMAND_AGENT, OPT_GREETING, OPT_HA_TOOL, OPT_IDLE_TIMEOUT,
                     OPT_INSTRUCTIONS, OPT_LANGUAGE, OPT_MAX_SESSION, OPT_MIC_GAIN, OPT_MODEL, OPT_VAD_EAGERNESS,
-                    OPT_VOICE, OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD)
+                    OPT_VOICE, OPT_ECHO_GUARD, DEFAULT_ECHO_GUARD, DEFAULT_GREETING)
 
 log = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class RtBridgeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data={CONF_ESPHOME_ENTRY: entry.entry_id, CONF_HOST: entry.data["host"],
                           CONF_NOISE_PSK: entry.data.get("noise_psk", ""), CONF_API_KEY: key},
                     options={OPT_MODEL: DEFAULT_MODEL, OPT_VOICE: DEFAULT_VOICE, OPT_COMMAND_AGENT: DEFAULT_COMMAND_AGENT,
-                             OPT_LANGUAGE: DEFAULT_LANGUAGE, OPT_GREETING: True, OPT_HA_TOOL: True,
+                             OPT_LANGUAGE: DEFAULT_LANGUAGE, OPT_GREETING: DEFAULT_GREETING, OPT_HA_TOOL: True,
                              OPT_IDLE_TIMEOUT: DEFAULT_IDLE_TIMEOUT, OPT_MAX_SESSION: DEFAULT_MAX_SESSION,
                              OPT_MIC_GAIN: DEFAULT_MIC_GAIN, OPT_VAD_EAGERNESS: DEFAULT_VAD_EAGERNESS})
         options = [selector.SelectOptionDict(value=e.entry_id, label=e.title) for e in esphome_entries]
@@ -102,7 +102,7 @@ class RtBridgeOptionsFlow(config_entries.OptionsFlow):
             vol.Required(OPT_COMMAND_AGENT, default=o.get(OPT_COMMAND_AGENT, DEFAULT_COMMAND_AGENT)): selector.ConversationAgentSelector(
                 selector.ConversationAgentSelectorConfig(language=o.get(OPT_LANGUAGE, DEFAULT_LANGUAGE))),
             vol.Required(OPT_LANGUAGE, default=o.get(OPT_LANGUAGE, DEFAULT_LANGUAGE)): str,
-            vol.Required(OPT_GREETING, default=o.get(OPT_GREETING, True)): bool,
+            vol.Required(OPT_GREETING, default=o.get(OPT_GREETING, DEFAULT_GREETING)): bool,
             vol.Required(OPT_VAD_EAGERNESS, default=o.get(OPT_VAD_EAGERNESS, DEFAULT_VAD_EAGERNESS)): selector.SelectSelector(
                 selector.SelectSelectorConfig(options=["auto", "low", "medium", "high"], mode=selector.SelectSelectorMode.DROPDOWN)),
             vol.Required(OPT_IDLE_TIMEOUT, default=o.get(OPT_IDLE_TIMEOUT, DEFAULT_IDLE_TIMEOUT)): vol.All(int, vol.Range(5, 600)),

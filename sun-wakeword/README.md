@@ -350,6 +350,10 @@ esptool.py --chip esp32s3 --port /dev/ttyACM0 write_flash 0x0 firmware/v14/firmw
 1. `wifi:` — `ssid: !secret wifi_ssid`, `password: !secret wifi_password` (без Improv BLE).
 2. `micro_wake_word.models` — `okay_nabu` заменён на `- model: /config/wake_words/sun/sun.json, id: sun`.
 3. `select.wake_word_sensitivity` — cutoff-ы под нашу модель (таблица в разделе 0).
+4. `external_components` — локальные патченные `voice_assistant` и `api` из `firmware/components/`
+   (перехват подписки голосового ассистента для rtbridge; фикс null-pointer при ответе не-владельцу),
+   `make sync` кладёт их в `/opt/components` на малинке.
+5. `media_player.announcement_pipeline.format: NONE` — включает все кодеки (rtbridge стримит WAV).
 
 `sun.json`: `probability_cutoff: 0.65` (перекрывается пресетом из YAML при старте),
 `sliding_window_size: 10`, `tensor_arena_size: 30000`.

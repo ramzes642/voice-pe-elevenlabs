@@ -27,6 +27,10 @@ Voice PE ◀──media_player announce: http://pi:8766/stream/<id>.wav (chunked
   displaced one is kept as a fallback and restored when the new owner disconnects, and a
   client whose `client_info` starts with `rtbridge` cannot be displaced. HA stays connected
   and gets the device back whenever rtbridge is down.
+* Second firmware patch, `components/api`: stock ESPHome answers a *non-owner* client's
+  `VoiceAssistantConfigurationRequest` with a response whose `active_wake_words` pointer is null
+  and crashes in `calculate_size()`. HA sends that request on every reconnect, so with rtbridge
+  owning the voice assistant the device rebooted each time HA restarted. One-line fix.
 
 Session ends when: the model calls the `end_conversation` tool (after saying goodbye), the
 user says the wake word or «stop» (device-side `voice_assistant.stop`), nobody speaks for
