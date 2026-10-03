@@ -9,7 +9,10 @@ import time
 import numpy as np
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.components.homeassistant.exposed_entities import async_should_expose
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.network import get_url
 
@@ -70,6 +73,37 @@ def normalize_areas(command: str, area_names: list[str]) -> str:
     return out
 
 
+def exposed_inventory(hass: HomeAssistant, limit: int = 120) -> str:
+    """One line per entity exposed to Assist: «Имя (домен, зона) [алиасы]». Lets the model phrase
+    commands with the exact names HA matches literally, instead of guessing declensions."""
+    areas = {a.id: a.name for a in ar.async_get(hass).async_list_areas()}
+    ent_reg, dev_reg = er.async_get(hass), dr.async_get(hass)
+    lines = []
+    for state in hass.states.async_all():
+        eid = state.entity_id
+        domain = eid.split(".")[0]
+        if domain in ("sensor", "binary_sensor", "update", "button", "event", "number", "select", "device_tracker"):
+            continue
+        if not async_should_expose(hass, "conversation", eid):
+            continue
+        ent = ent_reg.async_get(eid)
+        area_id = (ent.area_id if ent else None) or (dev_reg.async_get(ent.device_id).area_id if ent and ent.device_id and dev_reg.async_get(ent.device_id) else None)
+        name = state.name
+        aliases = sorted(a for a in (ent.aliases or ()) if isinstance(a, str)) if ent else []
+        if domain == "scene":
+            line = f"сцена «{name}» ({areas.get(area_id, 'без зоны')}) — только «активируй сцену {name}»"
+        elif domain in ("automation", "script"):
+            line = f"{domain} «{name}» ({areas.get(area_id, 'без зоны')})"
+        else:
+            line = f"{name} ({domain}, {areas.get(area_id, 'без зоны')}) сейчас: {state.state}"
+        if aliases:
+            line += " алиасы: " + ", ".join(aliases)
+        lines.append(line)
+        if len(lines) >= limit:
+            break
+    return "\n".join(sorted(lines))
+
+
 def _quote_in(quote: str, text: str) -> bool:
     """True if a meaningful word of the quoted farewell appears in the transcript text."""
     t = text.lower().replace("ё", "е")
@@ -110,8 +144,18 @@ class Session:
 
     async def start(self):
         self.b.dev.session_begin()
-        self._tasks.append(asyncio.create_task(self._run()))
+        self._tasks.append(asyncio.create_task(self._run_safe()))
         self._tasks.append(asyncio.create_task(self._watchdog()))
+
+    async def _run_safe(self):
+        try:
+            await self._run()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("session setup failed")
+            self.b.dev.error("rtbridge", "session setup failed")
+            await self.end("setup exception")
 
     async def on_audio(self, data: bytes, data2: bytes | None):
         self.mic_chunks += 1
@@ -120,7 +164,7 @@ class Session:
         if time.monotonic() < self.mute_until:
             data = bytes(len(data))   # the AEC leaks the first ~0.7 s of a new announcement
         gain = self.b.mic_gain
-        if self.b.dev.playing:
+        if self.b.dev.recently_playing(0.8):
             gain *= self.b.playback_duck   # residual echo of the device's own voice stays under the VAD
         if gain != 1.0:
             x = np.frombuffer(data, dtype=np.int16).astype(np.float32) * gain
@@ -191,7 +235,15 @@ class Session:
         def on_agent(t: str):
             log.info("AGENT: %s", t); agent_text["cur"] = ""
 
-        tools = [TOOL_END] + ([TOOL_HA] if self.b.ha_tool else [])
+        tools = [TOOL_END]
+        if self.b.ha_tool:
+            inv = exposed_inventory(hass)
+            ha_tool = dict(TOOL_HA)
+            ha_tool["description"] = (TOOL_HA["description"] +
+                " Устройства и зоны, которые знает дом (называй их ТОЧНО этими именами, в именительном падеже, "
+                "например «включи Двор освещение» или «выключи свет в Кухня»). Чтобы выключить то, что включал, "
+                "используй то же самое имя устройства (не сцену): сцены нельзя выключать. Список:\n" + inv)
+            tools.append(ha_tool)
         self.oai = RealtimeSession(async_get_clientsession(hass), self.b.api_key, model=self.b.model, voice=self.b.voice,
                                    instructions=self.b.instructions, tools=tools, language=self.b.language,
                                    eagerness=self.b.eagerness, on_audio=on_audio, on_audio_done=on_audio_done,
@@ -256,6 +308,18 @@ class Session:
         out = {"ok": rtype != "error", "response_type": rtype, "speech": speech}
         if rtype == "error":
             out["error_code"] = resp.get("data", {}).get("code")
+        else:
+            # what HA actually touched, with the state it is in now — so the model can report
+            # honestly when a target is unavailable (HA still says action_done in that case)
+            # Only flag targets that are unavailable; raw states lag behind (Zigbee reports later)
+            # and confused the model into «дом сказал включено, но состояние выключено».
+            targets = resp.get("data", {}).get("success", []) + resp.get("data", {}).get("failed", [])
+            out["targets"] = [t.get("name") for t in targets]
+            dead = [t.get("name") for t in targets
+                    if (st := self.b.hass.states.get(t.get("id", ""))) is None or st.state == "unavailable"]
+            if dead:
+                out["ok"] = False
+                out["error"] = f"недоступно (unavailable), команда не сработала: {', '.join(dead)}"
         log.info("HA → %s", out)
         return out
 

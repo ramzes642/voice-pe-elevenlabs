@@ -80,6 +80,11 @@ Goal: «солнце моё» → live full-duplex conversation through the ко
       from the area registry. Mic is ducked x0.3 while the device speaks (its own voice had leaked back
       into the transcript). NB «свет в гостиной» earlier reported action_done while the entity was
       unavailable after HA restarts — HA does not treat that as an error.
+- [x] Backyard lights (`input_boolean.backyard_lights` «Двор освещение») by voice, verified live: the entity
+      was not exposed to Assist (exposed it + aliases «свет во дворике/дворик/освещение дворика» in the UI);
+      the model now sees the exposed-entity inventory (name, domain, area, state, aliases; scenes marked
+      activate-only) in the tool description and names targets exactly; tool result lists targets and flags
+      unavailable ones; mic ducking extended 0.8 s past playback end; no tool calls on garbled input
 - [ ] Residual: rare device reboot at session end — lwIP select/semaphore assert in tcp_input (not in
       our code; device recovers in ~10 s and the bridge reconnects). Investigate if it becomes frequent
 - [ ] Tune first-response latency (semantic VAD eagerness), persona, wolt as a tool

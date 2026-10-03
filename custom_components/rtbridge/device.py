@@ -61,6 +61,7 @@ class VoicePE:
         self._player_idle = asyncio.Event()
         self._player_idle.set()
         self._announcing_since: float | None = None
+        self.idle_since: float = 0.0
 
     # ---- lifecycle --------------------------------------------------------------------
     async def start(self):
@@ -107,6 +108,7 @@ class VoicePE:
             if state.state in (MediaPlayerState.IDLE, MediaPlayerState.NONE, MediaPlayerState.PAUSED):
                 self._player_idle.set()
                 self._announcing_since = None
+                self.idle_since = asyncio.get_running_loop().time()
             else:
                 self._player_idle.clear()
                 if self._announcing_since is None:
@@ -174,6 +176,11 @@ class VoicePE:
     @property
     def playing(self) -> bool:
         return not self._player_idle.is_set()
+
+    def recently_playing(self, grace: float) -> bool:
+        """True while playing and for `grace` s after the player reported idle (its buffer is
+        still sounding, and the AEC tail leaks the end of the sentence back into the mic)."""
+        return self.playing or (asyncio.get_running_loop().time() - self.idle_since) < grace
 
     async def wait_playback_done(self, timeout: float = 30.0):
         try:
