@@ -51,6 +51,16 @@ TOOL_CLIMATE = {
         "temperature": {"type": "number", "description": "целевая температура в °C для set_temperature"}},
         "required": ["name", "action"]},
 }
+TOOL_DEVICE = {
+    "type": "function", "name": "device_control",
+    "description": "Включить/выключить ОДНО конкретное устройство из списка по его точному имени (свет, "
+                   "розетка, выключатель, хелпер, медиаплеер). Надёжнее, чем home_assistant, когда пользователь "
+                   "назвал устройство. Для «весь свет в комнате», таймеров, сцен и вопросов используй home_assistant.",
+    "parameters": {"type": "object", "properties": {
+        "name": {"type": "string", "description": "точное имя или алиас устройства из списка"},
+        "action": {"type": "string", "enum": ["turn_on", "turn_off", "toggle"]}},
+        "required": ["name", "action"]},
+}
 TOOL_HA = {
     "type": "function", "name": "home_assistant",
     "description": "Умный дом Home Assistant: включить/выключить/настроить свет, розетки, климат, шторы, медиа, "
@@ -67,7 +77,8 @@ def _stem_pattern(word: str) -> str:
     """Regex matching Russian declensions of `word`: keep the first len-2 letters (min 3), allow any tail."""
     w = word.lower().replace("ё", "е")
     keep = max(3, len(w) - 2) if len(w) > 3 else len(w)
-    return re.escape(w[:keep]) + r"[\w-]*"
+    # a declension adds at most ~3 letters; an open tail let «телек» swallow «Телевизор»
+    return re.escape(w[:keep]) + r"[\w-]{0,3}"
 
 
 def normalize_areas(command: str, area_names: list[str]) -> str:
@@ -303,6 +314,7 @@ class Session:
                 "например «включи Двор освещение» или «выключи свет в Кухня»). Чтобы выключить то, что включал, "
                 "используй то же самое имя устройства (не сцену): сцены нельзя выключать. Список:\n" + inv)
             tools.append(ha_tool)
+            tools.append(TOOL_DEVICE)
             if any(st.entity_id.startswith("climate.") and async_should_expose(hass, "conversation", st.entity_id)
                    for st in hass.states.async_all()):
                 tools.append(TOOL_CLIMATE)
@@ -345,6 +357,8 @@ class Session:
             return await self._ha_command(args.get("command") or "")
         if name == "climate_control":
             return await self._climate(args)
+        if name == "device_control":
+            return await self._device(args)
         return {"error": f"unknown tool {name}", "_no_response": True}
 
     async def _ha_command(self, command: str) -> dict:
@@ -368,6 +382,12 @@ class Session:
         if normalized != command:
             log.info("area names normalized: %r → %r", command, normalized)
             command = normalized
+        # Pre-router: «включи/выключи <точное имя> [в <зона>]» for one unique exposed entity goes
+        # straight to the service. HA's sentence matcher otherwise routes e.g. «включи Вентилятор в
+        # Гостиная» to its fan-domain rule, whose Russian response template is broken.
+        direct = await self._direct_on_off(command)
+        if direct is not None:
+            return direct
         data = {"text": command, "language": self.b.language, "agent_id": self.b.command_agent}
         if self.ha_conversation_id:
             data["conversation_id"] = self.ha_conversation_id
@@ -401,6 +421,97 @@ class Session:
                 out["error"] = f"недоступно (unavailable), команда не сработала: {', '.join(dead)}"
         log.info("HA → %s", out)
         return out
+
+    _ONOFF_RE = re.compile(r"^\s*(включи|включить|выключи|выключить)\s+(.+?)(?:\s+(?:в|во|на)\s+(.+?))?\s*[.!]?\s*$", re.I)
+    _GENERIC = {"свет", "лампа", "лампы", "музыка", "музыку", "всё", "все", "всe"}
+
+    async def _direct_on_off(self, command: str) -> dict | None:
+        m = self._ONOFF_RE.match(command.replace("ё", "е"))
+        if not m:
+            return None
+        verb, name, area = m.group(1).lower(), m.group(2).strip(), (m.group(3) or "").strip()
+        if name.lower() in self._GENERIC or len(name) < 4:
+            return None
+        hass = self.b.hass
+        ent_reg, dev_reg = er.async_get(hass), dr.async_get(hass)
+        areas = {a.id: a.name for a in ar.async_get(hass).async_list_areas()}
+        want = name.lower()
+        cands = []
+        for st in hass.states.async_all():
+            dom = st.entity_id.split(".")[0]
+            if dom in ("sensor", "binary_sensor", "climate", "scene", "automation", "script", "button", "event", "update", "media_player"):
+                continue
+            if not async_should_expose(hass, "conversation", st.entity_id):
+                continue
+            ent = ent_reg.async_get(st.entity_id)
+            names = [st.name.lower().replace("ё", "е")] + [a.lower().replace("ё", "е") for a in ((ent.aliases if ent else None) or ()) if isinstance(a, str)]
+            if want not in names:
+                continue
+            aid = (ent.area_id if ent else None) or (dev_reg.async_get(ent.device_id).area_id if ent and ent.device_id and dev_reg.async_get(ent.device_id) else None)
+            if area and areas.get(aid, "").lower() != area.lower():
+                continue
+            cands.append(st)
+        if len(cands) != 1:
+            return None   # let HA's own matcher handle it (and report duplicates / misses)
+        st = cands[0]
+        if st.state == "unavailable":
+            return {"ok": False, "error": f"{st.name} сейчас недоступно (unavailable)", "targets": [st.name]}
+        service = "turn_on" if verb.startswith("вкл") else "turn_off"
+        try:
+            await hass.services.async_call("homeassistant", service, {"entity_id": st.entity_id}, blocking=True)
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:200]}
+        await asyncio.sleep(0.8)
+        now = hass.states.get(st.entity_id)
+        res = {"ok": True, "response_type": "action_done", "speech": f"{st.name}: {service}", "targets": [st.name],
+               "state_now": now.state if now else None}
+        log.info("direct %s → %s", command, res)
+        return res
+
+    async def _device(self, args: dict) -> dict:
+        """Direct on/off by exact exposed name — bypasses sentence matching (which e.g. routes
+        «Вентилятор в Гостиная» to the fan-domain rule and dies in a broken response template)."""
+        hass = self.b.hass
+        want = (args.get("name") or "").strip().lower().replace("ё", "е")
+        action = args.get("action")
+        ent_reg = er.async_get(hass)
+        cands = []
+        for st in hass.states.async_all():
+            dom = st.entity_id.split(".")[0]
+            if dom in ("sensor", "binary_sensor", "climate", "scene", "automation", "script", "button", "event", "update"):
+                continue
+            if not async_should_expose(hass, "conversation", st.entity_id):
+                continue
+            ent = ent_reg.async_get(st.entity_id)
+            names = [st.name.lower().replace("ё", "е")] + [a.lower().replace("ё", "е") for a in ((ent.aliases if ent else None) or ()) if isinstance(a, str)]
+            if want in names:
+                cands.append(st)
+        if not cands:
+            return {"ok": False, "error": f"устройство «{args.get('name')}» не найдено в списке — назови точное имя"}
+        if len(cands) > 1:
+            areas = {a.id: a.name for a in ar.async_get(hass).async_list_areas()}
+            dev_reg = dr.async_get(hass)
+            def area_of(st):
+                ent = ent_reg.async_get(st.entity_id)
+                aid = (ent.area_id if ent else None) or (dev_reg.async_get(ent.device_id).area_id if ent and ent.device_id and dev_reg.async_get(ent.device_id) else None)
+                return areas.get(aid, "без зоны")
+            return {"ok": False, "error": "несколько устройств с таким именем: " + ", ".join(f"{c.name} ({area_of(c)})" for c in cands)
+                    + " — уточни у пользователя зону и используй home_assistant с зоной"}
+        st = cands[0]
+        if st.state == "unavailable":
+            return {"ok": False, "error": f"{st.name} сейчас недоступно (unavailable)"}
+        service = action if action in ("turn_on", "turn_off", "toggle") else None
+        if not service:
+            return {"ok": False, "error": f"неизвестное действие {action}"}
+        try:
+            await hass.services.async_call("homeassistant", service, {"entity_id": st.entity_id}, blocking=True)
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:200]}
+        await asyncio.sleep(1.0)
+        now = hass.states.get(st.entity_id)
+        res = {"ok": True, "entity": st.name, "action": service, "state_now": now.state if now else None}
+        log.info("device_control %s → %s", args, res)
+        return res
 
     async def _climate(self, args: dict) -> dict:
         """Direct climate control: HA's built-in intents can set a temperature but cannot switch a
